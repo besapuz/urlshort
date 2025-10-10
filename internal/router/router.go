@@ -51,10 +51,10 @@ func ShortenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shortId := generateShortID(8)
-	urlMap[shortId] = url
+	shortID := generateShortID(8)
+	urlMap[shortID] = url
 
-	resp := fmt.Sprintf("http://localhost:8080/%s", shortId)
+	resp := fmt.Sprintf("http://localhost:8080/%s", shortID)
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusCreated)
 	w.Write([]byte(resp))
