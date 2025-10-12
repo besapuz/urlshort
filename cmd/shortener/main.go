@@ -26,7 +26,7 @@ func main() {
 	})
 
 	fmt.Printf("Server started on http://%s\n", cfg.BaseURL)
-	err := http.ListenAndServe(cfg.Url, r)
+	err := http.ListenAndServe(cfg.Address, r)
 	if err != nil {
 		panic(err)
 	}
