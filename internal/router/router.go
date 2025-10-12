@@ -36,7 +36,9 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 
 		shortID := app.GenerateShortID(8)
 		urlMap[shortID] = url
-
+		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+			baseURL = "http://" + baseURL
+		}
 		resp := fmt.Sprintf("%s/%s", baseURL, shortID)
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusCreated)
