@@ -12,7 +12,7 @@ import (
 var urlMap = make(map[string]string)
 
 // ShortenHandler - обработчик POST-запросов.
-func ShortenHandler(baseUrl string) func(w http.ResponseWriter, r *http.Request) {
+func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Проверка типа контента
 		if r.Header.Get("Content-Type") != "text/plain" {
@@ -37,7 +37,7 @@ func ShortenHandler(baseUrl string) func(w http.ResponseWriter, r *http.Request)
 		shortID := app.GenerateShortID(8)
 		urlMap[shortID] = url
 
-		resp := fmt.Sprintf("http://localhost:8080/%s", shortID)
+		resp := fmt.Sprintf("%s/%s", baseURL, shortID)
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusCreated)
 		w.Write([]byte(resp))
