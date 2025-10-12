@@ -41,7 +41,7 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusCreated)
 		w.Write([]byte(resp))
-		fmt.Fprintf(w, "Base URL: %s\n", resp)
+		fmt.Fprintf(w, "\n")
 	}
 }
 
