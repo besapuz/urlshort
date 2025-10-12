@@ -3,61 +3,46 @@ package router
 import (
 	"fmt"
 	"io"
-	"math/rand/v2"
 	"net/http"
 	"strings"
+
+	"github.com/besapuz/urlshort/internal/app"
 )
 
-var (
-	urlMap = make(map[string]string)
-	chars  = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	rng    *rand.Rand
-)
-
-// initRand - инициализирует генератора случайных чисел.
-func initRand() {
-	rng = rand.New(rand.NewPCG(123456789, 987654321))
-}
-
-// generateShortID - генерирует случайныый идентификатор заданной длины.
-func generateShortID(length int) string {
-	initRand()
-	b := make([]byte, length)
-	for i := range b {
-		b[i] = chars[rng.IntN(len(chars))]
-	}
-	return string(b)
-}
+var urlMap = make(map[string]string)
 
 // ShortenHandler - обработчик POST-запросов.
-func ShortenHandler(w http.ResponseWriter, r *http.Request) {
-	// Проверка типа контента
-	if r.Header.Get("Content-Type") != "text/plain" {
-		http.Error(w, "", http.StatusBadRequest)
-		return
-	}
-	// Чтение тела запроса
-	body, err := io.ReadAll(r.Body)
-	if err != nil || len(body) == 0 {
-		http.Error(w, "", http.StatusBadRequest)
-		return
-	}
-	defer r.Body.Close()
+func ShortenHandler(baseUrl string) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Проверка типа контента
+		if r.Header.Get("Content-Type") != "text/plain" {
+			http.Error(w, "", http.StatusBadRequest)
+			return
+		}
+		// Чтение тела запроса
+		body, err := io.ReadAll(r.Body)
+		if err != nil || len(body) == 0 {
+			http.Error(w, "", http.StatusBadRequest)
+			return
+		}
+		defer r.Body.Close()
 
-	// Очистка от пробелом и валидация URL
-	url := strings.TrimSpace(string(body))
-	if !strings.HasPrefix(string(body), "http://") && !strings.HasPrefix(string(body), "https://") {
-		http.Error(w, "", http.StatusBadRequest)
-		return
+		// Очистка от пробелом и валидация URL
+		url := strings.TrimSpace(string(body))
+		if !strings.HasPrefix(string(body), "http://") && !strings.HasPrefix(string(body), "https://") {
+			http.Error(w, "", http.StatusBadRequest)
+			return
+		}
+
+		shortID := app.GenerateShortID(8)
+		urlMap[shortID] = url
+
+		resp := fmt.Sprintf("http://localhost:8080/%s", shortID)
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(resp))
+		fmt.Fprintf(w, "Base URL: %s\n", resp)
 	}
-
-	shortID := generateShortID(8)
-	urlMap[shortID] = url
-
-	resp := fmt.Sprintf("http://localhost:8080/%s", shortID)
-	w.Header().Set("Content-Type", "text/plain")
-	w.WriteHeader(http.StatusCreated)
-	w.Write([]byte(resp))
 }
 
 // RedirectHandler - обработчик GET-запросов.

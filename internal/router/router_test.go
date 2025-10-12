@@ -115,7 +115,8 @@ func TestShortenHandler(t *testing.T) {
 			rr := httptest.NewRecorder()
 
 			// Вызов обработчика
-			ShortenHandler(rr, req)
+			handler := ShortenHandler("http://localhost:8080")
+			handler(rr, req)
 
 			// Проверка статуса
 			assert.Equal(t, tt.expectedStatus, rr.Code)

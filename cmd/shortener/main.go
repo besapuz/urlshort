@@ -4,15 +4,17 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/besapuz/urlshort/internal/config"
 	"github.com/besapuz/urlshort/internal/router"
 	"github.com/go-chi/chi/v5"
 )
 
 func main() {
+	cfg := config.NewConfig()
 	r := chi.NewRouter()
 
 	// Обработка POST-запросов на корень
-	r.Post("/", router.ShortenHandler)
+	r.Post("/", router.ShortenHandler(cfg.BaseURL))
 
 	// Обработка GET-запросов к конкретному ID
 	r.Get("/{id}", router.RedirectHandler)
@@ -20,11 +22,11 @@ func main() {
 	// Обработка главного маршрута (GET /)
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "Shortener service is running")
+		fmt.Fprintf(w, "Shortener service is running at %s", cfg.BaseURL)
 	})
 
-	fmt.Println("Server started on http://localhost:8080")
-	err := http.ListenAndServe("localhost:8080", r)
+	fmt.Printf("Server started on http://%s\n", cfg.BaseURL)
+	err := http.ListenAndServe(cfg.Url, r)
 	if err != nil {
 		panic(err)
 	}
