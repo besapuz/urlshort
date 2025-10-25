@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/besapuz/urlshort/internal/config"
+	"github.com/besapuz/urlshort/internal/logger"
 	"github.com/besapuz/urlshort/internal/router"
 	"github.com/go-chi/chi/v5"
 )
@@ -24,9 +25,13 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "Shortener service is running at %s", cfg.BaseURL)
 	})
+	if err := logger.Initialize(cfg.LogLevel); err != nil {
+		panic(err)
+	}
 
 	fmt.Printf("Server started on http://%s\n", cfg.BaseURL)
-	err := http.ListenAndServe(cfg.Address, r)
+	err := http.ListenAndServe(cfg.Address, logger.RequestLogger(r))
+
 	if err != nil {
 		panic(err)
 	}

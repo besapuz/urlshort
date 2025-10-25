@@ -4,7 +4,7 @@ import (
 	"flag"
 )
 
-var FlagRunAddr, FlagBaseURL string
+var FlagRunAddr, FlagBaseURL, FlagLogLevel string
 
 // parseFlags обрабатывает аргументы командной строки
 // и сохраняет их значения в соответствующих переменных
@@ -13,7 +13,7 @@ func parseFlags() {
 	// как аргумент -a со значением :8080 по умолчанию
 	flag.StringVar(&FlagRunAddr, "a", "http://localhost:8080", "address and port to run server")
 	flag.StringVar(&FlagBaseURL, "b", "", "base URL for shortened links")
-
+	flag.StringVar(&FlagLogLevel, "l", "", "log level")
 	// парсим переданные серверу аргументы в зарегистрированные переменные
 	flag.Parse()
 }
