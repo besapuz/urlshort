@@ -2,6 +2,7 @@ package config
 
 import (
 	"flag"
+	"os"
 )
 
 type Config struct {
@@ -11,10 +12,19 @@ type Config struct {
 
 func NewConfig() *Config {
 	cfg := &Config{}
+	// берем алрес из переменной окружения и если env отсутствует, то берем значение флага -a
+	// если и его нет то назначаем дефолт localhost:8080
+	if envAdDress := os.Getenv("SERVER_ADDRESS"); envAdDress != "" {
+		cfg.Address = envAdDress
+	} else {
+		flag.StringVar(&cfg.Address, "a", "localhost:8080", "HTTP server address")
+	}
 
-	flag.StringVar(&cfg.Address, "a", "localhost:8080", "HTTP server address")
-	flag.StringVar(&cfg.BaseURL, "b", "", "Base URL for shortened links")
-
+	if envBaseUrl := os.Getenv("BASE_URL"); envBaseUrl != "" {
+		cfg.BaseURL = envBaseUrl
+	} else {
+		flag.StringVar(&cfg.BaseURL, "b", "", "Base URL for shortened links")
+	}
 	flag.Parse()
 
 	// Если BaseURL отсутствует, формируем его из Url
