@@ -17,13 +17,13 @@ func NewConfig() *Config {
 	if envAdDress := os.Getenv("SERVER_ADDRESS"); envAdDress != "" {
 		cfg.Address = envAdDress
 	} else {
-		flag.StringVar(&cfg.Address, "a", "localhost:8080", "HTTP server address")
+		flag.StringVar(&cfg.Address, "a", ":8080", "HTTP server address")
 	}
 
 	if envBaseUrl := os.Getenv("BASE_URL"); envBaseUrl != "" {
 		cfg.BaseURL = envBaseUrl
 	} else {
-		flag.StringVar(&cfg.BaseURL, "b", "", "Base URL for shortened links")
+		flag.StringVar(&cfg.BaseURL, "b", "http://localhost:8080", "Base URL for shortened links")
 	}
 	flag.Parse()
 
