@@ -2,6 +2,8 @@ package config
 
 import (
 	"flag"
+	"net"
+	"net/url"
 	"os"
 )
 
@@ -12,24 +14,32 @@ type Config struct {
 
 func NewConfig() *Config {
 	cfg := &Config{}
-	// берем алрес из переменной окружения и если env отсутствует, то берем значение флага -a
-	// если и его нет то назначаем дефолт localhost:8080
-	if envAdDress := os.Getenv("SERVER_ADDRESS"); envAdDress != "" {
-		cfg.Address = envAdDress
-	} else {
-		flag.StringVar(&cfg.Address, "a", "localhost:8080", "HTTP server address")
-	}
 
-	if envBaseURL := os.Getenv("BASE_URL"); envBaseURL != "" {
-		cfg.BaseURL = envBaseURL
-	} else {
-		flag.StringVar(&cfg.BaseURL, "b", "", "Base URL for shortened links")
-	}
+	flag.StringVar(&cfg.Address, "a", "localhost:8080", "HTTP server address")
+	flag.StringVar(&cfg.BaseURL, "b", "", "Base URL for shortened links")
+
 	flag.Parse()
 
-	// Если BaseURL отсутствует, формируем его из Url
+	if envRunAddres := os.Getenv("SERVER_ADDRESS"); envRunAddres != "" {
+		cfg.Address = envRunAddres
+	}
+	if envBaseURL := os.Getenv("BASE_URL"); envBaseURL != "" {
+		cfg.BaseURL = envBaseURL
+	}
+
+	// Если BaseURL отсутствует, формируем его из Address
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = cfg.Address
+	} else {
+		// Проверяем, есть ли в BaseURL порт
+		parsedURL, _ := url.Parse(cfg.BaseURL)
+		if parsedURL.Port() == "" {
+			// Добавляем порт из Address, если он указан
+			_, port, err := net.SplitHostPort(cfg.Address)
+			if err == nil && port != "" {
+				cfg.BaseURL += ":" + port
+			}
+		}
 	}
 
 	return cfg
