@@ -34,6 +34,10 @@ func ShortenJSONHandler(baseURL string) func(w http.ResponseWriter, r *http.Requ
 			http.Error(w, "", http.StatusBadRequest)
 			return
 		}
+		if !strings.HasPrefix(req.URL, "http://") && !strings.HasPrefix(req.URL, "https://") {
+			http.Error(w, "", http.StatusBadRequest)
+			return
+		}
 		shortID := app.GenerateShortID(8)
 		result := map[string]string{"result": shortID}
 		response, err := json.Marshal(result)
