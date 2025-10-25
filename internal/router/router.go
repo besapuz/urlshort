@@ -1,6 +1,7 @@
 package router
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,41 @@ import (
 )
 
 var urlMap = make(map[string]string)
+var req struct {
+	URL string `json:"url"`
+}
+
+// ShortenJSONHandler - обработчик POST-запросов в формате JSON.
+func ShortenJSONHandler(baseURL string) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		if r.Header.Get("Content-Type") != "application/json" {
+			http.Error(w, "", http.StatusBadRequest)
+			return
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil || len(body) == 0 {
+			http.Error(w, "", http.StatusBadRequest)
+			return
+		}
+		defer r.Body.Close()
+		// Дессирализация JSON
+		if err := json.Unmarshal(body, &req); err != nil {
+			http.Error(w, "", http.StatusBadRequest)
+			return
+		}
+		shortID := app.GenerateShortID(8)
+		result := map[string]string{"result": shortID}
+		response, err := json.Marshal(result)
+		if err != nil {
+			http.Error(w, "", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		w.Write(response)
+	}
+}
 
 // ShortenHandler - обработчик POST-запросов.
 func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request) {

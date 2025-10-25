@@ -16,6 +16,7 @@ func main() {
 
 	// Обработка POST-запросов на корень
 	r.Post("/", router.ShortenHandler(cfg.BaseURL))
+	r.Post("/api/shorten", router.ShortenJSONHandler(cfg.BaseURL))
 
 	// Обработка GET-запросов к конкретному ID
 	r.Get("/{id}", router.RedirectHandler)

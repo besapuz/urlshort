@@ -108,7 +108,7 @@ func TestShortenHandler(t *testing.T) {
 			urlMap = make(map[string]string)
 
 			// Создание запроса
-			req := httptest.NewRequest("POST", "/shorten", strings.NewReader(tt.body))
+			req := httptest.NewRequest("POST", "/", strings.NewReader(tt.body))
 			req.Header.Set("Content-Type", tt.contentType)
 
 			// Создание ответа
@@ -116,6 +116,64 @@ func TestShortenHandler(t *testing.T) {
 
 			// Вызов обработчика
 			handler := ShortenHandler("http://localhost:8080")
+			handler(rr, req)
+
+			// Проверка статуса
+			assert.Equal(t, tt.expectedStatus, rr.Code)
+		})
+	}
+}
+
+// TestShortenJSONHandler - тестирование функции shortenJSONHandler.
+func TestShortenJSONHandler(t *testing.T) {
+
+	tests := []struct {
+		name           string
+		contentType    string
+		body           string
+		expectedStatus int
+	}{
+		{
+			name:           "Valid Content-Type",
+			contentType:    "application/json",
+			body:           `{"url": "https://example.com"}`,
+			expectedStatus: http.StatusCreated,
+		},
+		{
+			name:           "Empty body",
+			contentType:    "text/plain",
+			body:           "",
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Invalid URL format",
+			contentType:    "text/plain",
+			body:           `{"url": "https://example.com"}`,
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Invalid request",
+			contentType:    "text/plain",
+			body:           `{"url": "https://example.com"}`,
+			expectedStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+
+			// Сброс глобального состояния
+			urlMap = make(map[string]string)
+
+			// Создание запроса
+			req := httptest.NewRequest("POST", "/api/shorten", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", tt.contentType)
+
+			// Создание ответа
+			rr := httptest.NewRecorder()
+
+			// Вызов обработчика
+			handler := ShortenJSONHandler(tt.body)
 			handler(rr, req)
 
 			// Проверка статуса
