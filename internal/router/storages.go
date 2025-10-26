@@ -47,7 +47,7 @@ func SaveToFile(filePath string) error {
 	if err != nil {
 		return err
 	}
-	file, err = os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	file, err = os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
 	if err != nil {
 		return err
 	}
