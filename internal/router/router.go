@@ -92,19 +92,16 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 		shortID := app.GenerateShortID(8)
 		urlMap[shortID] = url
 
-		// ДОБАВЛЕНО: Сохраняем в файл
 		URLMappings = append(URLMappings, URLMapping{
 			UUID:        uuid.New().String(),
 			ShortURL:    shortID,
 			OriginalURL: url,
 		})
 
-		// ДОБАВЛЕНО: Получаем filePath из конфига или переменной окружения
 		filePath := GetStorageFilePath()
 		if filePath != "" {
 			if err := SaveToFile(filePath); err != nil {
 				log.Printf("Error saving to file: %v", err)
-				// Не прерываем выполнение, продолжаем отвечать клиенту
 			}
 		}
 
