@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/besapuz/urlshort/internal/config"
 	"github.com/besapuz/urlshort/internal/handler"
@@ -15,7 +16,8 @@ func main() {
 	cfg := config.NewConfig()
 	r := chi.NewRouter()
 	if err := router.LoadFromFile(cfg.FileStoragePath); err != nil {
-		panic(err)
+		fmt.Fprintf(os.Stderr, "Ошибка загрузки файла: %v\n", err)
+		os.Exit(1)
 	}
 	r.Use(handler.GzipMiddleware)
 	// Обработка POST-запросов на корень

@@ -24,19 +24,33 @@ var (
 func LoadFromFile(filePath string) error {
 	mutex.Lock()
 	defer mutex.Unlock()
+
 	data, err := os.ReadFile(filePath)
 	if os.IsNotExist(err) {
+		// Файл не существует — инициализируем пустую карту
+		urlMap = make(map[string]string)
+		URLMappings = []URLMapping{}
 		return nil
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("ошибка чтения файла: %w", err)
+	}
+
+	if len(data) == 0 {
+		// Пустой файл — инициализируем пустую карту
+		urlMap = make(map[string]string)
+		URLMappings = []URLMapping{}
+		return nil
 	}
 
 	if err := json.Unmarshal(data, &URLMappings); err != nil {
-		return err
+		return fmt.Errorf("ошибка десериализации JSON: %w", err)
 	}
-	for _, v := range URLMappings {
-		urlMap[v.ShortURL] = v.OriginalURL
+
+	// Синхронизируем urlMap с URLMappings
+	urlMap = make(map[string]string)
+	for _, m := range URLMappings {
+		urlMap[m.ShortURL] = m.OriginalURL
 	}
 	return nil
 }
