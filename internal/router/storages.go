@@ -15,9 +15,25 @@ type URLMapping struct {
 }
 
 var (
+	urlMap      = make(map[string]string)
 	URLMappings []URLMapping
 	mutex       sync.Mutex
+	storageFile string // Глобальная переменная для пути к файлу
 )
+
+// SetStorageFile устанавливает путь к файлу хранилища
+func SetStorageFile(filePath string) {
+	mutex.Lock()
+	defer mutex.Unlock()
+	storageFile = filePath
+}
+
+// GetStorageFilePath возвращает путь к файлу хранилища
+func GetStorageFilePath() string {
+	mutex.Lock()
+	defer mutex.Unlock()
+	return storageFile
+}
 
 func LoadFromFile(filePath string) error {
 	mutex.Lock()
