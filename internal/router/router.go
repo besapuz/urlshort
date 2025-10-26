@@ -70,7 +70,7 @@ func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r 
 }
 
 // ShortenHandler - обработчик POST-запросов.
-func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request) {
+func ShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Проверка типа контента
 		if r.Header.Get("Content-Type") != "text/plain" {
@@ -94,6 +94,16 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 
 		shortID := app.GenerateShortID(8)
 		urlMap[shortID] = url
+		newUUID := uuid.New().String()
+		urlMap[shortID] = url
+		URLMappings = append(URLMappings, URLMapping{
+			UUID:        newUUID,
+			ShortURL:    shortID,
+			OriginalURL: url,
+		})
+		if err := SaveToFile(filePath); err != nil {
+			log.Printf("Error saving to file: %v", err)
+		}
 		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
 			baseURL = "http://" + baseURL
 		}

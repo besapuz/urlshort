@@ -54,10 +54,11 @@ func NewConfig() *Config {
 	}
 	if cfg.FileStoragePath == "" {
 		cfg.FileStoragePath = filepath.Join(os.TempDir(), "urls.json")
-		dir := filepath.Dir(cfg.FileStoragePath)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			panic(err)
-		}
+	}
+
+	dir := filepath.Dir(cfg.FileStoragePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		panic(err)
 	}
 	return cfg
 }
