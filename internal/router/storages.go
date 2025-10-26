@@ -2,7 +2,9 @@ package router
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -43,6 +45,10 @@ func SaveToFile(filePath string) error {
 	var err error
 	mutex.Lock()
 	defer mutex.Unlock()
+	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
 	data, err := json.Marshal(URLMappings)
 	if err != nil {
 		return err
