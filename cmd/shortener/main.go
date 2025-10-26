@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/besapuz/urlshort/internal/config"
+	"github.com/besapuz/urlshort/internal/handler"
 	"github.com/besapuz/urlshort/internal/logger"
 	"github.com/besapuz/urlshort/internal/router"
 	"github.com/go-chi/chi/v5"
@@ -14,6 +15,7 @@ func main() {
 	cfg := config.NewConfig()
 	r := chi.NewRouter()
 
+	r.Use(handler.GzipMiddleware)
 	// Обработка POST-запросов на корень
 	r.Post("/", router.ShortenHandler(cfg.BaseURL))
 	r.Post("/api/shorten", router.ShortenJSONHandler(cfg.BaseURL))
