@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 
 	"github.com/besapuz/urlshort/internal/app"
+	"github.com/google/uuid"
 )
 
 var urlMap = make(map[string]string)
@@ -16,7 +18,7 @@ var req struct {
 }
 
 // ShortenJSONHandler - обработчик POST-запросов в формате JSON.
-func ShortenJSONHandler(baseURL string) func(w http.ResponseWriter, r *http.Request) {
+func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		if r.Header.Get("Content-Type") != "application/json" {
@@ -40,7 +42,17 @@ func ShortenJSONHandler(baseURL string) func(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		shortID := app.GenerateShortID(8)
+		newUUID := uuid.New().String()
 		urlMap[shortID] = url
+		URLMappings = append(URLMappings, URLMapping{
+			UUID:        newUUID,
+			ShortURL:    shortID,
+			OriginalURL: url,
+		})
+		if err := SaveToFile(filePath); err != nil {
+			log.Printf("Error saving to file: %v", err)
+		}
+
 		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
 			baseURL = "http://" + baseURL
 		}

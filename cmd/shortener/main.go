@@ -14,11 +14,13 @@ import (
 func main() {
 	cfg := config.NewConfig()
 	r := chi.NewRouter()
-
+	if err := router.LoadFromFile(cfg.FileStoragePath); err != nil {
+		panic(err)
+	}
 	r.Use(handler.GzipMiddleware)
 	// Обработка POST-запросов на корень
 	r.Post("/", router.ShortenHandler(cfg.BaseURL))
-	r.Post("/api/shorten", router.ShortenJSONHandler(cfg.BaseURL))
+	r.Post("/api/shorten", router.ShortenJSONHandler(cfg.BaseURL, cfg.FileStoragePath))
 
 	// Обработка GET-запросов к конкретному ID
 	r.Get("/{id}", router.RedirectHandler)

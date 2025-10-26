@@ -131,30 +131,35 @@ func TestShortenJSONHandler(t *testing.T) {
 		name           string
 		contentType    string
 		body           string
+		filePath       string
 		expectedStatus int
 	}{
 		{
 			name:           "Valid Content-Type",
 			contentType:    "application/json",
 			body:           `{"url": "https://example.com"}`,
+			filePath:       "testdata/urls.json",
 			expectedStatus: http.StatusCreated,
 		},
 		{
 			name:           "Empty body",
 			contentType:    "text/plain",
 			body:           "",
+			filePath:       "testdata/urls.json",
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name:           "Invalid URL format",
 			contentType:    "text/plain",
 			body:           `{"url": "https://example.com"}`,
+			filePath:       "testdata/urls.json",
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name:           "Invalid request",
 			contentType:    "text/plain",
 			body:           `{"url": "https://example.com"}`,
+			filePath:       "testdata/urls.json",
 			expectedStatus: http.StatusBadRequest,
 		},
 	}
@@ -173,7 +178,7 @@ func TestShortenJSONHandler(t *testing.T) {
 			rr := httptest.NewRecorder()
 
 			// Вызов обработчика
-			handler := ShortenJSONHandler(tt.body)
+			handler := ShortenJSONHandler(tt.body, tt.filePath)
 			handler(rr, req)
 
 			// Проверка статуса

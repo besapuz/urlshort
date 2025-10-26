@@ -5,12 +5,14 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 )
 
 type Config struct {
-	Address  string
-	BaseURL  string
-	LogLevel string
+	Address         string
+	BaseURL         string
+	LogLevel        string
+	FileStoragePath string
 }
 
 func NewConfig() *Config {
@@ -19,6 +21,7 @@ func NewConfig() *Config {
 	flag.StringVar(&cfg.Address, "a", "localhost:8080", "HTTP server address")
 	flag.StringVar(&cfg.BaseURL, "b", "", "Base URL for shortened links")
 	flag.StringVar(&cfg.LogLevel, "l", "", "log level")
+	flag.StringVar(&cfg.FileStoragePath, "f", "", "path to file storage")
 
 	flag.Parse()
 
@@ -30,6 +33,9 @@ func NewConfig() *Config {
 	}
 	if envLogLevel := os.Getenv("LOG_LEVEL"); envLogLevel != "" {
 		cfg.LogLevel = envLogLevel
+	}
+	if envFileStoragePath := os.Getenv("FILE_STORAGE_PATH"); envFileStoragePath != "" {
+		cfg.FileStoragePath = envFileStoragePath
 	}
 
 	// Если BaseURL отсутствует, формируем его из Address
@@ -46,6 +52,8 @@ func NewConfig() *Config {
 			}
 		}
 	}
-
+	if cfg.FileStoragePath == "" {
+		cfg.FileStoragePath = filepath.Join(os.TempDir(), "./urls.json")
+	}
 	return cfg
 }
