@@ -8,8 +8,6 @@ import (
 	"sync"
 )
 
-var file *os.File
-
 type URLMapping struct {
 	UUID        string `json:"uuid"`
 	ShortURL    string `json:"short_url"`
@@ -56,7 +54,6 @@ func LoadFromFile(filePath string) error {
 }
 
 func SaveToFile(filePath string) error {
-	var err error
 	mutex.Lock()
 	defer mutex.Unlock()
 	dir := filepath.Dir(filePath)
@@ -67,7 +64,7 @@ func SaveToFile(filePath string) error {
 	if err != nil {
 		return err
 	}
-	file, err = os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
+	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
 	if err != nil {
 		return err
 	}
