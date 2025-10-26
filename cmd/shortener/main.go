@@ -21,7 +21,7 @@ func main() {
 	}
 	r.Use(handler.GzipMiddleware)
 	// Обработка POST-запросов на корень
-	r.Post("/", router.ShortenHandler(cfg.BaseURL, cfg.FileStoragePath))
+	r.Post("/", router.ShortenHandler(cfg.BaseURL))
 	r.Post("/api/shorten", router.ShortenJSONHandler(cfg.BaseURL, cfg.FileStoragePath))
 
 	// Обработка GET-запросов к конкретному ID

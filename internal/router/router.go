@@ -69,49 +69,57 @@ func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r 
 	}
 }
 
-// ShortenHandler - обработчик POST-запросов.
-func ShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r *http.Request) {
+// ShortenHandler - обработчик POST-запросов
+func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Проверка типа контента
-		if r.Header.Get("Content-Type") != "text/plain" {
-			http.Error(w, "", http.StatusBadRequest)
-			return
-		}
-		// Чтение тела запроса
-		body, err := io.ReadAll(r.Body)
-		if err != nil || len(body) == 0 {
-			http.Error(w, "", http.StatusBadRequest)
-			return
-		}
-		defer r.Body.Close()
+		shortenHandlerInternal(w, r, baseURL, "")
+	}
+}
 
-		// Очистка от пробелом и валидация URL
-		url := strings.TrimSpace(string(body))
-		if !strings.HasPrefix(string(body), "http://") && !strings.HasPrefix(string(body), "https://") {
-			http.Error(w, "", http.StatusBadRequest)
-			return
-		}
+// Общая внутренняя логика
+func shortenHandlerInternal(w http.ResponseWriter, r *http.Request, baseURL, filePath string) {
+	if r.Header.Get("Content-Type") != "text/plain" {
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
 
-		shortID := app.GenerateShortID(8)
-		urlMap[shortID] = url
-		newUUID := uuid.New().String()
-		urlMap[shortID] = url
+	body, err := io.ReadAll(r.Body)
+	if err != nil || len(body) == 0 {
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	url := strings.TrimSpace(string(body))
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
+
+	shortID := app.GenerateShortID(8)
+	urlMap[shortID] = url
+
+	// Сохраняем только если передан filePath
+	if filePath != "" {
 		URLMappings = append(URLMappings, URLMapping{
-			UUID:        newUUID,
+			UUID:        uuid.New().String(),
 			ShortURL:    shortID,
 			OriginalURL: url,
 		})
 		if err := SaveToFile(filePath); err != nil {
 			log.Printf("Error saving to file: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
 		}
-		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
-			baseURL = "http://" + baseURL
-		}
-		resp := fmt.Sprintf("%s/%s", baseURL, shortID)
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(http.StatusCreated)
-		w.Write([]byte(resp))
 	}
+
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		baseURL = "http://" + baseURL
+	}
+	resp := fmt.Sprintf("%s/%s", baseURL, shortID)
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusCreated)
+	w.Write([]byte(resp))
 }
 
 // RedirectHandler - обработчик GET-запросов.
