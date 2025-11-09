@@ -9,7 +9,13 @@ import (
 	"strings"
 
 	"github.com/besapuz/urlshort/internal/app"
+	"github.com/besapuz/urlshort/internal/config/db"
 	"github.com/google/uuid"
+)
+
+var (
+	dbstorage *db.DBStorage
+	useDB     bool
 )
 
 var req struct {
@@ -130,4 +136,17 @@ func RedirectHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Location", url)
 	w.WriteHeader(http.StatusTemporaryRedirect)
+}
+
+// PingHandler - обработчик для проверки соединения с БД.
+func PingHandler(w http.ResponseWriter, r *http.Request) {
+	if useDB || dbstorage == nil {
+		http.Error(w, "Database not configurated", http.StatusInternalServerError)
+		return
+	}
+	if err := dbstorage.Ping(); err != nil {
+		http.Error(w, "Database connection failed", http.StatusInternalServerError)
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK"))
 }

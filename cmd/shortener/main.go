@@ -29,7 +29,7 @@ func main() {
 	r.Post("/api/shorten", router.ShortenJSONHandler(cfg.BaseURL, cfg.FileStoragePath))
 
 	r.Get("/{id}", router.RedirectHandler)
-
+	r.Get("/ping", router.PingHandler)
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "Shortener service is running at %s", cfg.BaseURL)
