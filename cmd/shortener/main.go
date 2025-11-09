@@ -16,8 +16,14 @@ import (
 func main() {
 	cfg := config.NewConfig()
 	r := chi.NewRouter()
-	router.SetStorageFile(cfg.FileStoragePath)
 
+	if cfg.DatabaseDSN == "" {
+		router.SetStorageFile(cfg.FileStoragePath)
+		if err := router.LoadFromFile(cfg.FileStoragePath); err != nil {
+			fmt.Fprintf(os.Stderr, "Ошибка загрузки файла: %v\n", err)
+			os.Exit(1)
+		}
+	}
 	if cfg.DatabaseDSN != "" {
 		if err := router.InitDBStorage(cfg.DatabaseDSN); err != nil {
 			fmt.Fprintf(os.Stderr, "Ошибка инициализации базы данных: %v\n", err)
@@ -25,10 +31,6 @@ func main() {
 		}
 	}
 
-	if err := router.LoadFromFile(cfg.FileStoragePath); err != nil {
-		fmt.Fprintf(os.Stderr, "Ошибка загрузки файла: %v\n", err)
-		os.Exit(1)
-	}
 	r.Use(handler.GzipMiddleware)
 
 	// Используем старую сигнатуру, но внутри она будет сохранять в файл

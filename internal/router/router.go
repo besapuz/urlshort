@@ -61,7 +61,7 @@ func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r 
 		newUUID := uuid.New().String()
 
 		if useDB {
-			if err := dbstorage.SaveURL(r.Context(), dbstorage.DB, newUUID, shortID, url); err != nil {
+			if err := dbstorage.SaveURL(r.Context(), newUUID, shortID, url); err != nil {
 				log.Printf("Error saving to database: %v", err)
 				http.Error(w, "Database error", http.StatusInternalServerError)
 				return
@@ -122,7 +122,7 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 		newUUID := uuid.New().String()
 
 		if useDB {
-			if err := dbstorage.SaveURL(r.Context(), dbstorage.DB, newUUID, shortID, url); err != nil {
+			if err := dbstorage.SaveURL(r.Context(), newUUID, shortID, url); err != nil {
 				log.Printf("Error saving to database: %v", err)
 				http.Error(w, "Database error", http.StatusInternalServerError)
 				return
@@ -162,16 +162,17 @@ func RedirectHandler(w http.ResponseWriter, r *http.Request) {
 	var url string
 	var err error
 	if useDB {
-		url, err = dbstorage.GetURL(r.Context(), dbstorage.DB, id)
+		url, err = dbstorage.GetURL(r.Context(), id)
 		if err != nil {
-			exists = true
+			http.Error(w, "", http.StatusBadRequest)
+			return
 		}
 	} else {
 		url, exists = urlMap[id]
-	}
-	if !exists {
-		http.Error(w, "", http.StatusBadRequest)
-		return
+		if !exists {
+			http.Error(w, "", http.StatusBadRequest)
+			return
+		}
 	}
 	w.Header().Set("Location", url)
 	w.WriteHeader(http.StatusTemporaryRedirect)

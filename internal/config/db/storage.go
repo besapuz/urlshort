@@ -36,11 +36,6 @@ func NewDBStorage(dsn string) (*DBStorage, error) {
 		db.Close()
 		return nil, fmt.Errorf("filed to run migrations: %w", err)
 	}
-
-	if err := createTable(db); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("filed to create table: %w", err)
-	}
 	return &DBStorage{DB: db}, nil
 }
 
@@ -72,20 +67,6 @@ func runMigrations(db *sql.DB) error {
 	return nil
 }
 
-// createTable - функция для создания таблицы в базе данных.
-func createTable(db *sql.DB) error {
-	query := `
-		CREATE TABLE IF NOT EXISTS url_mappings (
-		id SERIAL PRIMARY KEY,
-		uuid TEXT UNIQUE NOT NULL,
-		short_url TEXT UNIQUE NOT NULL,
-		original_url TEXT NOT NULL,
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		)`
-	_, err := db.Exec(query)
-	return err
-}
-
 // Ping - функция для проверки соединения с базой данных.
 func (s *DBStorage) Ping() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -99,26 +80,23 @@ func (s *DBStorage) Close() error {
 }
 
 // SaveURL - сохранение URL в базу данных.
-func (s *DBStorage) SaveURL(ctx context.Context, db *sql.DB, uuid, shortID, originalURL string) error {
-	result, err := db.ExecContext(ctx, `INSERT INTO url_mappings (uuid, shortID, originalURL) VALEUS ($1, $2, $3)`, uuid, shortID, originalURL)
+func (s *DBStorage) SaveURL(ctx context.Context, uuid, shortID, originalURL string) error {
+	_, err := s.DB.ExecContext(ctx, `INSERT INTO url_mappings (uuid, short_url, original_url) VALUES ($1, $2, $3)`, uuid, shortID, originalURL)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to save URL: %w", err)
 	}
-	result.LastInsertId()
 	return nil
 }
 
 // GetURL - получение URL из базы данных.
-func (s *DBStorage) GetURL(ctx context.Context, db *sql.DB, shortID string) (string, error) {
+func (s *DBStorage) GetURL(ctx context.Context, shortID string) (string, error) {
 	var originalURL string
-	rows, err := db.QueryContext(ctx, `SELECT original_url FROM url_mappings WHERE short_url = $1`, shortID)
+	err := s.DB.QueryRowContext(ctx, `SELECT original_url FROM url_mappings WHERE short_url = $1`, shortID).Scan(&originalURL)
 	if err != nil {
-		return "", err
-	}
-	defer rows.Close()
-	err = rows.Scan(&originalURL)
-	if err != nil {
-		return "", err
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("URL not found for shortID: %s", shortID)
+		}
+		return "", fmt.Errorf("failed to get URL: %w", err)
 	}
 	return originalURL, nil
 }
