@@ -15,7 +15,7 @@ import (
 )
 
 type DBStorage struct {
-	db *sql.DB
+	DB *sql.DB
 }
 
 // NewDBStorage - конструктор для DBStorage.
@@ -41,7 +41,7 @@ func NewDBStorage(dsn string) (*DBStorage, error) {
 		db.Close()
 		return nil, fmt.Errorf("filed to create table: %w", err)
 	}
-	return &DBStorage{db: db}, nil
+	return &DBStorage{DB: db}, nil
 }
 
 // runMigrations - выполняет миграции БД.
@@ -90,10 +90,35 @@ func createTable(db *sql.DB) error {
 func (s *DBStorage) Ping() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return s.db.PingContext(ctx)
+	return s.DB.PingContext(ctx)
 }
 
 // Close - функция для закрытия соединения с базой данных.
 func (s *DBStorage) Close() error {
-	return s.db.Close()
+	return s.DB.Close()
+}
+
+// SaveURL - сохранение URL в базу данных.
+func (s *DBStorage) SaveURL(ctx context.Context, db *sql.DB, uuid, shortID, originalURL string) error {
+	result, err := db.ExecContext(ctx, `INSERT INTO url_mappings (uuid, shortID, originalURL) VALEUS ($1, $2, $3)`, uuid, shortID, originalURL)
+	if err != nil {
+		return err
+	}
+	result.LastInsertId()
+	return nil
+}
+
+// GetURL - получение URL из базы данных.
+func (s *DBStorage) GetURL(ctx context.Context, db *sql.DB, shortID string) (string, error) {
+	var originalURL string
+	rows, err := db.QueryContext(ctx, `SELECT original_url FROM url_mappings WHERE short_url = $1`, shortID)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	err = rows.Scan(&originalURL)
+	if err != nil {
+		return "", err
+	}
+	return originalURL, nil
 }

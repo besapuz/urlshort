@@ -59,14 +59,25 @@ func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r 
 		}
 		shortID := app.GenerateShortID(8)
 		newUUID := uuid.New().String()
-		urlMap[shortID] = url
-		URLMappings = append(URLMappings, URLMapping{
-			UUID:        newUUID,
-			ShortURL:    shortID,
-			OriginalURL: url,
-		})
-		if err := SaveToFile(filePath); err != nil {
-			log.Printf("Error saving to file: %v", err)
+
+		if useDB {
+			if err := dbstorage.SaveURL(r.Context(), dbstorage.DB, newUUID, shortID, url); err != nil {
+				log.Printf("Error saving to database: %v", err)
+				http.Error(w, "Database error", http.StatusInternalServerError)
+				return
+			}
+		} else if filePath != "" {
+			urlMap[shortID] = url
+			URLMappings = append(URLMappings, URLMapping{
+				UUID:        newUUID,
+				ShortURL:    shortID,
+				OriginalURL: url,
+			})
+			if err := SaveToFile(filePath); err != nil {
+				log.Printf("Error saving to file: %v", err)
+			}
+		} else {
+			urlMap[shortID] = url
 		}
 
 		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
@@ -85,7 +96,7 @@ func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r 
 	}
 }
 
-// ShortenHandler - обработчик POST-запросов
+// ShortenHandler - обработчик POST-запросов.
 func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Content-Type") != "text/plain" {
@@ -105,21 +116,29 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 			http.Error(w, "", http.StatusBadRequest)
 			return
 		}
+		filePath := GetStorageFilePath()
 
 		shortID := app.GenerateShortID(8)
-		urlMap[shortID] = url
+		newUUID := uuid.New().String()
 
-		URLMappings = append(URLMappings, URLMapping{
-			UUID:        uuid.New().String(),
-			ShortURL:    shortID,
-			OriginalURL: url,
-		})
-
-		filePath := GetStorageFilePath()
-		if filePath != "" {
+		if useDB {
+			if err := dbstorage.SaveURL(r.Context(), dbstorage.DB, newUUID, shortID, url); err != nil {
+				log.Printf("Error saving to database: %v", err)
+				http.Error(w, "Database error", http.StatusInternalServerError)
+				return
+			}
+		} else if filePath != "" {
+			urlMap[shortID] = url
+			URLMappings = append(URLMappings, URLMapping{
+				UUID:        newUUID,
+				ShortURL:    shortID,
+				OriginalURL: url,
+			})
 			if err := SaveToFile(filePath); err != nil {
 				log.Printf("Error saving to file: %v", err)
 			}
+		} else {
+			urlMap[shortID] = url
 		}
 
 		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
@@ -139,8 +158,17 @@ func RedirectHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
-
-	url, exists := urlMap[id]
+	var exists bool
+	var url string
+	var err error
+	if useDB {
+		url, err = dbstorage.GetURL(r.Context(), dbstorage.DB, id)
+		if err != nil {
+			exists = true
+		}
+	} else {
+		url, exists = urlMap[id]
+	}
 	if !exists {
 		http.Error(w, "", http.StatusBadRequest)
 		return
