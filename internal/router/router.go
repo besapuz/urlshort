@@ -22,6 +22,17 @@ var req struct {
 	URL string `json:"url"`
 }
 
+// InitDBStorage - инициализация хранилища в базе данных
+func InitDBStorage(dsn string) error {
+	storage, err := db.NewDBStorage(dsn)
+	if err != nil {
+		return err
+	}
+	dbstorage = storage
+	useDB = true
+	return nil
+}
+
 // ShortenJSONHandler - обработчик POST-запросов в формате JSON.
 func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -140,7 +151,7 @@ func RedirectHandler(w http.ResponseWriter, r *http.Request) {
 
 // PingHandler - обработчик для проверки соединения с БД.
 func PingHandler(w http.ResponseWriter, r *http.Request) {
-	if useDB || dbstorage == nil {
+	if !useDB || dbstorage == nil {
 		http.Error(w, "Database not configurated", http.StatusInternalServerError)
 		return
 	}

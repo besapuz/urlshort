@@ -18,6 +18,13 @@ func main() {
 	r := chi.NewRouter()
 	router.SetStorageFile(cfg.FileStoragePath)
 
+	if cfg.DatabaseDSN != "" {
+		if err := router.InitDBStorage(cfg.DatabaseDSN); err != nil {
+			fmt.Fprintf(os.Stderr, "Ошибка инициализации базы данных: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	if err := router.LoadFromFile(cfg.FileStoragePath); err != nil {
 		fmt.Fprintf(os.Stderr, "Ошибка загрузки файла: %v\n", err)
 		os.Exit(1)
