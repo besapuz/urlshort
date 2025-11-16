@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"runtime"
@@ -11,8 +12,13 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
+
+// ErrURLConflict - ошибка конфликта URL
+var ErrURLConflict = errors.New("URL already exists")
 
 type DBStorage struct {
 	DB *sql.DB
@@ -81,17 +87,56 @@ func (s *DBStorage) Close() error {
 
 // SaveURL - сохранение URL в базу данных.
 func (s *DBStorage) SaveURL(ctx context.Context, uuid, shortID, originalURL string) error {
-	_, err := s.DB.ExecContext(ctx, `INSERT INTO url_mappings (uuid, short_url, original_url) VALUES ($1, $2, $3)`, uuid, shortID, originalURL)
+	_, err := s.DB.ExecContext(ctx,
+		`INSERT INTO url_mappings (uuid, short_url, original_url) VALUES ($1, $2, $3)`,
+		uuid, shortID, originalURL)
 	if err != nil {
 		return fmt.Errorf("failed to save URL: %w", err)
 	}
 	return nil
 }
 
+// SaveURLWithConflictCheck - сохранение URL с проверкой конфликта
+func (s *DBStorage) SaveURLWithConflictCheck(ctx context.Context, uuid, shortID, originalURL string) (string, error) {
+	_, err := s.DB.ExecContext(ctx,
+		`INSERT INTO url_mappings (uuid, short_url, original_url) VALUES ($1, $2, $3)`,
+		uuid, shortID, originalURL)
+
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+			// Если это нарушение уникальности по original_url, получаем существующий short_url
+			if pgErr.ConstraintName == "idx_original_url" {
+				existingShortURL, err := s.GetShortURLByOriginalURL(ctx, originalURL)
+				if err != nil {
+					return "", fmt.Errorf("failed to get existing short URL: %w", err)
+				}
+				return existingShortURL, ErrURLConflict
+			}
+		}
+		return "", fmt.Errorf("failed to save URL: %w", err)
+	}
+	return shortID, nil
+}
+
+// GetShortURLByOriginalURL - получение short_url по original_url
+func (s *DBStorage) GetShortURLByOriginalURL(ctx context.Context, originalURL string) (string, error) {
+	var shortURL string
+	err := s.DB.QueryRowContext(ctx,
+		`SELECT short_url FROM url_mappings WHERE original_url = $1`,
+		originalURL).Scan(&shortURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to get short URL: %w", err)
+	}
+	return shortURL, nil
+}
+
 // GetURL - получение URL из базы данных.
 func (s *DBStorage) GetURL(ctx context.Context, shortID string) (string, error) {
 	var originalURL string
-	err := s.DB.QueryRowContext(ctx, `SELECT original_url FROM url_mappings WHERE short_url = $1`, shortID).Scan(&originalURL)
+	err := s.DB.QueryRowContext(ctx,
+		`SELECT original_url FROM url_mappings WHERE short_url = $1`,
+		shortID).Scan(&originalURL)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return "", fmt.Errorf("URL not found for shortID: %s", shortID)
