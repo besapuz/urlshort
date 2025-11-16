@@ -49,8 +49,10 @@ func InitDBStorage(dsn string) error {
 // ShortenJSONHandler - обработчик POST-запросов в формате JSON.
 func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Content-Type") != "application/json" {
-			http.Error(w, "", http.StatusBadRequest)
+		// Более гибкая проверка Content-Type для совместимости с тестами
+		contentType := r.Header.Get("Content-Type")
+		if !strings.Contains(contentType, "application/json") {
+			http.Error(w, "Invalid content type", http.StatusBadRequest)
 			return
 		}
 
@@ -176,8 +178,10 @@ func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r 
 // ShortenHandler - обработчик POST-запросов.
 func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Content-Type") != "text/plain" {
-			http.Error(w, "", http.StatusBadRequest)
+		// Более гибкая проверка Content-Type для совместимости с тестами
+		contentType := r.Header.Get("Content-Type")
+		if !strings.Contains(contentType, "text/plain") {
+			http.Error(w, "Invalid content type", http.StatusBadRequest)
 			return
 		}
 
@@ -276,7 +280,7 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 
 // RedirectHandler - обработчик GET-запросов.
 func RedirectHandler(w http.ResponseWriter, r *http.Request) {
-	// ВАЖНО: Используем chi для получения параметра
+
 	id := r.URL.Path[1:] // Убираем ведущий "/"
 	if id == "" {
 		http.Error(w, "Empty ID", http.StatusBadRequest)
@@ -330,7 +334,8 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 			return
 		}
 
-		if r.Header.Get("Content-Type") != "application/json" {
+		contentType := r.Header.Get("Content-Type")
+		if !strings.Contains(contentType, "application/json") {
 			http.Error(w, "Content-Type must be application/json", http.StatusBadRequest)
 			return
 		}
