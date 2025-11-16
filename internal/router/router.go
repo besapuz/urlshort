@@ -2,6 +2,7 @@ package router
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -11,6 +12,8 @@ import (
 	"github.com/besapuz/urlshort/internal/app"
 	"github.com/besapuz/urlshort/internal/config/db"
 	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 var (
@@ -46,7 +49,6 @@ func InitDBStorage(dsn string) error {
 // ShortenJSONHandler - обработчик POST-запросов в формате JSON.
 func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-
 		if r.Header.Get("Content-Type") != "application/json" {
 			http.Error(w, "", http.StatusBadRequest)
 			return
@@ -57,25 +59,38 @@ func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r 
 			return
 		}
 		defer r.Body.Close()
-		// Дессирализация JSON
+
 		if err := json.Unmarshal(body, &req); err != nil {
 			http.Error(w, "", http.StatusBadRequest)
 			return
 		}
+
 		url := req.URL
 		if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 			http.Error(w, "", http.StatusBadRequest)
 			return
 		}
+
 		shortID := app.GenerateShortID(8)
 		newUUID := uuid.New().String()
 
 		if useDB {
-			if err := dbstorage.SaveURL(r.Context(), newUUID, shortID, url); err != nil {
+			savedShortID, err := dbstorage.SaveURLWithConflictCheck(r.Context(), newUUID, shortID, url)
+			if err != nil {
+				if errors.Is(err, db.ErrURLConflict) {
+					// URL уже существует - возвращаем конфликт
+					result := map[string]string{"result": fmt.Sprintf("%s/%s", baseURL, savedShortID)}
+					response, _ := json.Marshal(result)
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusConflict)
+					w.Write(response)
+					return
+				}
 				log.Printf("Error saving to database: %v", err)
 				http.Error(w, "Database error", http.StatusInternalServerError)
 				return
 			}
+			shortID = savedShortID // Используем фактически сохраненный shortID
 		} else if filePath != "" {
 			urlMap[shortID] = url
 			URLMappings = append(URLMappings, URLMapping{
@@ -132,11 +147,21 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 		newUUID := uuid.New().String()
 
 		if useDB {
-			if err := dbstorage.SaveURL(r.Context(), newUUID, shortID, url); err != nil {
+			savedShortID, err := dbstorage.SaveURLWithConflictCheck(r.Context(), newUUID, shortID, url)
+			if err != nil {
+				if errors.Is(err, db.ErrURLConflict) {
+					// URL уже существует - возвращаем конфликт
+					resp := fmt.Sprintf("%s/%s", baseURL, savedShortID)
+					w.Header().Set("Content-Type", "text/plain")
+					w.WriteHeader(http.StatusConflict)
+					w.Write([]byte(resp))
+					return
+				}
 				log.Printf("Error saving to database: %v", err)
 				http.Error(w, "Database error", http.StatusInternalServerError)
 				return
 			}
+			shortID = savedShortID // Используем фактически сохраненный shortID
 		} else if filePath != "" {
 			urlMap[shortID] = url
 			URLMappings = append(URLMappings, URLMapping{
@@ -246,11 +271,10 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 			baseURL = "http://" + baseURL
 		}
 
+		// Обработка для базы данных
 		var batchResponses []BatchResponseItem
 
-		// Обработка для базы данных
 		if useDB {
-			// Сохраняем все URL в одной транзакции
 			tx, err := dbstorage.DB.Begin()
 			if err != nil {
 				log.Printf("Error starting transaction: %v", err)
@@ -263,14 +287,29 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 				shortID := app.GenerateShortID(8)
 				newUUID := uuid.New().String()
 
+				// Используем SaveURLWithConflictCheck логику в транзакции
 				_, err := tx.ExecContext(r.Context(),
 					`INSERT INTO url_mappings (uuid, short_url, original_url) VALUES ($1, $2, $3)`,
 					newUUID, shortID, item.OriginalURL)
 
 				if err != nil {
-					log.Printf("Error saving URL to database: %v", err)
-					http.Error(w, "Database error", http.StatusInternalServerError)
-					return
+					var pgErr *pgconn.PgError
+					if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation && pgErr.ConstraintName == "idx_original_url" {
+						// Получаем существующий shortURL
+						var existingShortURL string
+						err := tx.QueryRowContext(r.Context(),
+							`SELECT short_url FROM url_mappings WHERE original_url = $1`, item.OriginalURL).Scan(&existingShortURL)
+						if err != nil {
+							log.Printf("Error getting existing short URL: %v", err)
+							http.Error(w, "Database error", http.StatusInternalServerError)
+							return
+						}
+						shortID = existingShortURL
+					} else {
+						log.Printf("Error saving URL to database: %v", err)
+						http.Error(w, "Database error", http.StatusInternalServerError)
+						return
+					}
 				}
 
 				batchResponses = append(batchResponses, BatchResponseItem{
