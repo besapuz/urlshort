@@ -86,7 +86,7 @@ func (s *DBStorage) Close() error {
 	return s.DB.Close()
 }
 
-// SaveURL - сохранение URL в базу данных (базовая версия для обратной совместимости)
+// SaveURL - сохранение URL в базу данных
 func (s *DBStorage) SaveURL(ctx context.Context, uuid, shortID, originalURL string) error {
 	_, err := s.DB.ExecContext(ctx,
 		`INSERT INTO url_mappings (uuid, short_url, original_url) VALUES ($1, $2, $3)`,
