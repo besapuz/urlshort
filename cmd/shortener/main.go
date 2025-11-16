@@ -36,6 +36,7 @@ func main() {
 	// Используем старую сигнатуру, но внутри она будет сохранять в файл
 	r.Post("/", router.ShortenHandler(cfg.BaseURL))
 	r.Post("/api/shorten", router.ShortenJSONHandler(cfg.BaseURL, cfg.FileStoragePath))
+	r.Post("/api/shorten/batch", router.BatchShortenHandler(cfg.BaseURL, cfg.FileStoragePath))
 
 	r.Get("/{id}", router.RedirectHandler)
 	r.Get("/ping", router.PingHandler)
