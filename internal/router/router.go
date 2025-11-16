@@ -53,26 +53,30 @@ func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r 
 			http.Error(w, "", http.StatusBadRequest)
 			return
 		}
+
 		body, err := io.ReadAll(r.Body)
 		if err != nil || len(body) == 0 {
-			http.Error(w, "", http.StatusBadRequest)
+			http.Error(w, "Empty body", http.StatusBadRequest)
 			return
 		}
 		defer r.Body.Close()
 
-		// Дессирализация JSON
+		// Десериализация JSON
 		if err := json.Unmarshal(body, &req); err != nil {
-			http.Error(w, "", http.StatusBadRequest)
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
 			return
 		}
-		url := req.URL
-		if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
-			http.Error(w, "", http.StatusBadRequest)
+
+		url := strings.TrimSpace(req.URL)
+		if url == "" || (!strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://")) {
+			http.Error(w, "Invalid URL", http.StatusBadRequest)
 			return
 		}
+
 		shortID := app.GenerateShortID(8)
 		newUUID := uuid.New().String()
 
+		// Логика с обработкой конфликтов
 		if useDB {
 			savedShortID, err := dbstorage.SaveURLWithConflictCheck(r.Context(), newUUID, shortID, url)
 			if err != nil {
@@ -81,7 +85,7 @@ func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r 
 					result := map[string]string{"result": fmt.Sprintf("%s/%s", baseURL, savedShortID)}
 					response, err := json.Marshal(result)
 					if err != nil {
-						http.Error(w, "", http.StatusInternalServerError)
+						http.Error(w, "Internal server error", http.StatusInternalServerError)
 						return
 					}
 					w.Header().Set("Content-Type", "application/json")
@@ -93,20 +97,19 @@ func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r 
 				http.Error(w, "Database error", http.StatusInternalServerError)
 				return
 			}
-			shortID = savedShortID // Используем фактический shortID (может быть другим при конфликте)
+			shortID = savedShortID
 		} else if filePath != "" {
-			// Проверка конфликта для файлового хранилища
 			mutex.Lock()
 			defer mutex.Unlock()
 
-			// Проверяем, существует ли уже URL
+			// Проверка конфликта для файлового хранилища
 			for _, mapping := range URLMappings {
 				if mapping.OriginalURL == url {
 					// URL уже существует - возвращаем конфликт
 					result := map[string]string{"result": fmt.Sprintf("%s/%s", baseURL, mapping.ShortURL)}
 					response, err := json.Marshal(result)
 					if err != nil {
-						http.Error(w, "", http.StatusInternalServerError)
+						http.Error(w, "Internal server error", http.StatusInternalServerError)
 						return
 					}
 					w.Header().Set("Content-Type", "application/json")
@@ -127,18 +130,17 @@ func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r 
 				log.Printf("Error saving to file: %v", err)
 			}
 		} else {
-			// Проверка конфликта для памяти
 			mutex.Lock()
 			defer mutex.Unlock()
 
-			// Проверяем, существует ли уже URL
+			// Проверка конфликта для памяти
 			for existingShortID, existingURL := range urlMap {
 				if existingURL == url {
 					// URL уже существует - возвращаем конфликт
 					result := map[string]string{"result": fmt.Sprintf("%s/%s", baseURL, existingShortID)}
 					response, err := json.Marshal(result)
 					if err != nil {
-						http.Error(w, "", http.StatusInternalServerError)
+						http.Error(w, "Internal server error", http.StatusInternalServerError)
 						return
 					}
 					w.Header().Set("Content-Type", "application/json")
@@ -152,16 +154,19 @@ func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r 
 			urlMap[shortID] = url
 		}
 
-		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
-			baseURL = "http://" + baseURL
+		// Формируем базовый URL
+		fullBaseURL := baseURL
+		if !strings.HasPrefix(fullBaseURL, "http://") && !strings.HasPrefix(fullBaseURL, "https://") {
+			fullBaseURL = "http://" + fullBaseURL
 		}
 
-		result := map[string]string{"result": fmt.Sprintf("%s/%s", baseURL, shortID)}
+		result := map[string]string{"result": fmt.Sprintf("%s/%s", fullBaseURL, shortID)}
 		response, err := json.Marshal(result)
 		if err != nil {
-			http.Error(w, "", http.StatusBadRequest)
+			http.Error(w, "Error creating response", http.StatusInternalServerError)
 			return
 		}
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		w.Write(response)
@@ -178,21 +183,22 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 
 		body, err := io.ReadAll(r.Body)
 		if err != nil || len(body) == 0 {
-			http.Error(w, "", http.StatusBadRequest)
+			http.Error(w, "Empty body", http.StatusBadRequest)
 			return
 		}
 		defer r.Body.Close()
 
 		url := strings.TrimSpace(string(body))
-		if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
-			http.Error(w, "", http.StatusBadRequest)
+		if url == "" || (!strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://")) {
+			http.Error(w, "Invalid URL", http.StatusBadRequest)
 			return
 		}
-		filePath := GetStorageFilePath()
 
+		filePath := GetStorageFilePath()
 		shortID := app.GenerateShortID(8)
 		newUUID := uuid.New().String()
 
+		// Логика с обработкой конфликтов
 		if useDB {
 			savedShortID, err := dbstorage.SaveURLWithConflictCheck(r.Context(), newUUID, shortID, url)
 			if err != nil {
@@ -208,12 +214,12 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 				http.Error(w, "Database error", http.StatusInternalServerError)
 				return
 			}
-			shortID = savedShortID // Используем фактический shortID
+			shortID = savedShortID
 		} else if filePath != "" {
 			mutex.Lock()
 			defer mutex.Unlock()
 
-			// Проверяем, существует ли уже URL
+			// Проверка конфликта для файлового хранилища
 			for _, mapping := range URLMappings {
 				if mapping.OriginalURL == url {
 					// URL уже существует - возвращаем конфликт
@@ -239,7 +245,7 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 			mutex.Lock()
 			defer mutex.Unlock()
 
-			// Проверяем, существует ли уже URL
+			// Проверка конфликта для памяти
 			for existingShortID, existingURL := range urlMap {
 				if existingURL == url {
 					// URL уже существует - возвращаем конфликт
@@ -255,14 +261,65 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 			urlMap[shortID] = url
 		}
 
-		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
-			baseURL = "http://" + baseURL
+		// Формируем базовый URL
+		fullBaseURL := baseURL
+		if !strings.HasPrefix(fullBaseURL, "http://") && !strings.HasPrefix(fullBaseURL, "https://") {
+			fullBaseURL = "http://" + fullBaseURL
 		}
-		resp := fmt.Sprintf("%s/%s", baseURL, shortID)
+
+		resp := fmt.Sprintf("%s/%s", fullBaseURL, shortID)
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusCreated)
 		w.Write([]byte(resp))
 	}
+}
+
+// RedirectHandler - обработчик GET-запросов.
+func RedirectHandler(w http.ResponseWriter, r *http.Request) {
+	// ВАЖНО: Используем chi для получения параметра
+	id := r.URL.Path[1:] // Убираем ведущий "/"
+	if id == "" {
+		http.Error(w, "Empty ID", http.StatusBadRequest)
+		return
+	}
+
+	var url string
+	var err error
+	var exists bool
+
+	if useDB {
+		url, err = dbstorage.GetURL(r.Context(), id)
+		if err != nil {
+			http.Error(w, "URL not found", http.StatusBadRequest)
+			return
+		}
+	} else {
+		mutex.Lock()
+		url, exists = urlMap[id]
+		mutex.Unlock()
+
+		if !exists {
+			http.Error(w, "URL not found", http.StatusBadRequest)
+			return
+		}
+	}
+
+	w.Header().Set("Location", url)
+	w.WriteHeader(http.StatusTemporaryRedirect)
+}
+
+// PingHandler - обработчик для проверки соединения с БД.
+func PingHandler(w http.ResponseWriter, r *http.Request) {
+	if !useDB || dbstorage == nil {
+		http.Error(w, "Database not configured", http.StatusInternalServerError)
+		return
+	}
+	if err := dbstorage.Ping(); err != nil {
+		http.Error(w, "Database connection failed", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK"))
 }
 
 // BatchShortenHandler - обработчик для пакетного сокращения URL
@@ -298,21 +355,22 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 
 		// Валидация URL
 		for _, item := range batchRequests {
-			if !strings.HasPrefix(item.OriginalURL, "http://") &&
-				!strings.HasPrefix(item.OriginalURL, "https://") {
+			url := strings.TrimSpace(item.OriginalURL)
+			if url == "" || (!strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://")) {
 				http.Error(w, fmt.Sprintf("Invalid URL in item: %s", item.CorrelationID), http.StatusBadRequest)
 				return
 			}
 		}
 
 		// Формируем базовый URL
-		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
-			baseURL = "http://" + baseURL
+		fullBaseURL := baseURL
+		if !strings.HasPrefix(fullBaseURL, "http://") && !strings.HasPrefix(fullBaseURL, "https://") {
+			fullBaseURL = "http://" + fullBaseURL
 		}
 
 		var batchResponses []BatchResponseItem
 
-		// Обработка для базы данных
+		// Обработка для базы данных с учетом конфликтов
 		if useDB {
 			tx, err := dbstorage.DB.Begin()
 			if err != nil {
@@ -353,7 +411,7 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 
 				batchResponses = append(batchResponses, BatchResponseItem{
 					CorrelationID: item.CorrelationID,
-					ShortURL:      fmt.Sprintf("%s/%s", baseURL, shortID),
+					ShortURL:      fmt.Sprintf("%s/%s", fullBaseURL, shortID),
 				})
 			}
 
@@ -363,7 +421,7 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 				return
 			}
 		} else {
-			// Обработка для файлового хранилища и памяти
+			// Обработка для файлового хранилища и памяти с учетом конфликтов
 			mutex.Lock()
 			defer mutex.Unlock()
 
@@ -406,7 +464,7 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 
 				batchResponses = append(batchResponses, BatchResponseItem{
 					CorrelationID: item.CorrelationID,
-					ShortURL:      fmt.Sprintf("%s/%s", baseURL, shortID),
+					ShortURL:      fmt.Sprintf("%s/%s", fullBaseURL, shortID),
 				})
 			}
 
@@ -428,44 +486,4 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 		w.WriteHeader(http.StatusCreated)
 		w.Write(response)
 	}
-}
-
-// RedirectHandler - обработчик GET-запросов.
-func RedirectHandler(w http.ResponseWriter, r *http.Request) {
-	id := strings.TrimPrefix(r.URL.Path, "/")
-	if id == "" {
-		http.Error(w, "", http.StatusBadRequest)
-		return
-	}
-	var exists bool
-	var url string
-	var err error
-	if useDB {
-		url, err = dbstorage.GetURL(r.Context(), id)
-		if err != nil {
-			http.Error(w, "", http.StatusBadRequest)
-			return
-		}
-	} else {
-		url, exists = urlMap[id]
-		if !exists {
-			http.Error(w, "", http.StatusBadRequest)
-			return
-		}
-	}
-	w.Header().Set("Location", url)
-	w.WriteHeader(http.StatusTemporaryRedirect)
-}
-
-// PingHandler - обработчик для проверки соединения с БД.
-func PingHandler(w http.ResponseWriter, r *http.Request) {
-	if !useDB || dbstorage == nil {
-		http.Error(w, "Database not configurated", http.StatusInternalServerError)
-		return
-	}
-	if err := dbstorage.Ping(); err != nil {
-		http.Error(w, "Database connection failed", http.StatusInternalServerError)
-	}
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("OK"))
 }

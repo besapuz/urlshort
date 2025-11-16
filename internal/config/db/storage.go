@@ -17,12 +17,12 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-// ErrURLConflict - ошибка конфликта URL
-var ErrURLConflict = errors.New("URL already exists")
-
 type DBStorage struct {
 	DB *sql.DB
 }
+
+// ErrURLConflict - ошибка конфликта URL
+var ErrURLConflict = errors.New("URL already exists")
 
 // NewDBStorage - конструктор для DBStorage.
 func NewDBStorage(dsn string) (*DBStorage, error) {
@@ -31,16 +31,17 @@ func NewDBStorage(dsn string) (*DBStorage, error) {
 
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("filed to database: %w", err)
+		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
 	if err := db.PingContext(ctx); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("filed to ping database: %w", err)
+		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
+
 	if err := runMigrations(db); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("filed to run migrations: %w", err)
+		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 	return &DBStorage{DB: db}, nil
 }
@@ -85,7 +86,7 @@ func (s *DBStorage) Close() error {
 	return s.DB.Close()
 }
 
-// SaveURL - сохранение URL в базу данных.
+// SaveURL - сохранение URL в базу данных (базовая версия для обратной совместимости)
 func (s *DBStorage) SaveURL(ctx context.Context, uuid, shortID, originalURL string) error {
 	_, err := s.DB.ExecContext(ctx,
 		`INSERT INTO url_mappings (uuid, short_url, original_url) VALUES ($1, $2, $3)`,
