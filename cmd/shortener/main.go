@@ -3,7 +3,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 
@@ -49,6 +48,10 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Printf("Server started on http://%s\n", "cfg.Address")
-	log.Fatal(http.ListenAndServe(cfg.Address, logger.RequestLogger(r)))
+	fmt.Printf("Server started on http://%s\n", cfg.Address)
+	err := http.ListenAndServe(cfg.Address, logger.RequestLogger(r))
+
+	if err != nil {
+		panic(err)
+	}
 }
