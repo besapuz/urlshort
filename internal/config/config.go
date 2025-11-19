@@ -13,6 +13,7 @@ type Config struct {
 	BaseURL         string
 	LogLevel        string
 	FileStoragePath string
+	DatabaseDSN     string
 }
 
 func NewConfig() *Config {
@@ -22,6 +23,7 @@ func NewConfig() *Config {
 	flag.StringVar(&cfg.BaseURL, "b", "", "Base URL for shortened links")
 	flag.StringVar(&cfg.LogLevel, "l", "", "log level")
 	flag.StringVar(&cfg.FileStoragePath, "f", "", "path to file storage")
+	flag.StringVar(&cfg.DatabaseDSN, "d", "", "database connect")
 
 	flag.Parse()
 
@@ -36,6 +38,9 @@ func NewConfig() *Config {
 	}
 	if envFileStoragePath := os.Getenv("FILE_STORAGE_PATH"); envFileStoragePath != "" {
 		cfg.FileStoragePath = envFileStoragePath
+	}
+	if envDatabaseDSN := os.Getenv("DATABASE_DSN"); envDatabaseDSN != "" {
+		cfg.DatabaseDSN = envDatabaseDSN
 	}
 
 	// Если BaseURL отсутствует, формируем его из Address

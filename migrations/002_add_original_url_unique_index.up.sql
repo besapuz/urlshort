@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX idx_original_url ON url_mappings(original_url);
