@@ -108,7 +108,11 @@ func getAuthenticatedUserID(r *http.Request) (string, bool) {
 	}
 
 	userID, valid := verifyCookie(cookie.Value)
-	return userID, valid
+	if !valid {
+		return "", false
+	}
+
+	return userID, true
 }
 
 // InitDBStorage - инициализация хранилища в базе данных
