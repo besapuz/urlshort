@@ -166,6 +166,25 @@ type UserURL struct {
 	OriginalURL string `json:"original_url"`
 }
 
+// GetURLWithStatus - получает URL и статус удаления
+func (s *DBStorage) GetURLWithStatus(ctx context.Context, shortID string) (string, bool, error) {
+	var originalURL string
+	var deleted bool
+
+	err := s.DB.QueryRowContext(ctx,
+		`SELECT original_url, deleted FROM url_mappings WHERE short_url = $1`,
+		shortID).Scan(&originalURL, &deleted)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", false, fmt.Errorf("URL not found for shortID: %s", shortID)
+		}
+		return "", false, fmt.Errorf("failed to get URL: %w", err)
+	}
+
+	return originalURL, deleted, nil
+}
+
 // GetUserURLs - обновите для исключения удаленных URL
 func (s *DBStorage) GetUserURLs(ctx context.Context, userID string) ([]UserURL, error) {
 	var urls []UserURL
