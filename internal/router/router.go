@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/besapuz/urlshort/internal/app"
@@ -534,7 +535,7 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 	}
 }
 
-// router.go - улучшенный DeleteURLsHandler с fanIn паттерном
+// DeleteURLsHandler - улучшенный обработчик для удаления URL с fan-in паттерном
 func DeleteURLsHandler() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Проверяем аутентификацию
@@ -565,63 +566,53 @@ func DeleteURLsHandler() func(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Для базы данных - используем улучшенный метод с batch update
+		// Логируем запрос на удаление
+		log.Printf("Received delete request for %d URLs from user %s", len(shortIDs), userID)
+
+		// Для базы данных - используем улучшенный метод с fan-in паттерном
 		if useDB {
 			go func(ids []string, uid string) {
+				start := time.Now()
+				log.Printf("Starting async deletion of %d URLs for user %s", len(ids), uid)
+
 				if err := deleteURLsBatch(ids, uid); err != nil {
 					log.Printf("Error deleting URLs in batch: %v", err)
+				} else {
+					duration := time.Since(start)
+					log.Printf("Successfully completed deletion of %d URLs for user %s in %v",
+						len(ids), uid, duration)
 				}
 			}(shortIDs, userID)
 		} else {
 			// Для файлового хранилища и памяти
 			go func(ids []string, uid string) {
-				mutex.Lock()
-				defer mutex.Unlock()
+				start := time.Now()
+				log.Printf("Starting async deletion of %d URLs for user %s (file/memory)", len(ids), uid)
 
-				// Помечаем URL как удаленные
-				for _, shortID := range ids {
-					// Ищем в файловом хранилище
-					if filePath := GetStorageFilePath(); filePath != "" {
-						for i := range URLMappings {
-							if URLMappings[i].ShortURL == shortID && URLMappings[i].UserID == uid {
-								URLMappings[i].DeletedFlag = true
-							}
-						}
-						// Сохраняем изменения в файл
-						if err := SaveToFile(filePath); err != nil {
-							log.Printf("Error saving to file: %v", err)
-						}
-					} else {
-						// Для in-memory хранилища - удаляем из urlMap
-						delete(urlMap, shortID)
-						// И из userURLsMap
-						if userURLs, exists := userURLsMap[uid]; exists {
-							for i, id := range userURLs {
-								if id == shortID {
-									userURLsMap[uid] = append(userURLs[:i], userURLs[i+1:]...)
-									break
-								}
-							}
-						}
-					}
+				if err := deleteURLsBatch(ids, uid); err != nil {
+					log.Printf("Error deleting URLs in batch: %v", err)
+				} else {
+					duration := time.Since(start)
+					log.Printf("Successfully completed deletion of %d URLs for user %s in %v",
+						len(ids), uid, duration)
 				}
 			}(shortIDs, userID)
 		}
 
 		// Возвращаем Accepted, так как удаление происходит асинхронно
 		w.WriteHeader(http.StatusAccepted)
+		w.Write([]byte("Delete request accepted"))
 	}
 }
 
-// deleteURLsBatch - улучшенная версия с batch update и fanIn паттерном
+// deleteURLsBatch - удаляет URL в батче с использованием fan-in паттерна
 func deleteURLsBatch(shortIDs []string, userID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Используем каналы для реализации fanIn паттерна
-	batchSize := 100 // Размер батча для обновления
+	batchSize := 10 // Уменьшаем размер батча для лучшей параллельности
 	batches := make(chan []string)
-	results := make(chan error)
+	results := make(chan error, len(shortIDs)/batchSize+1) // Буферизованный канал
 
 	// Горутина для разбивки на батчи
 	go func() {
@@ -637,23 +628,45 @@ func deleteURLsBatch(shortIDs []string, userID string) error {
 
 	// Запускаем воркеры для обработки батчей
 	numWorkers := 3
+	var wg sync.WaitGroup
+
 	for i := 0; i < numWorkers; i++ {
-		go func() {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
 			for batch := range batches {
+				log.Printf("Worker %d processing batch of %d URLs", workerID, len(batch))
 				err := processBatch(ctx, batch, userID)
 				results <- err
+				if err != nil {
+					log.Printf("Worker %d error: %v", workerID, err)
+				} else {
+					log.Printf("Worker %d successfully processed batch", workerID)
+				}
 			}
-		}()
+		}(i)
 	}
 
-	// Собираем результаты (fanIn)
+	// Закрываем results после завершения всех воркеров
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Собираем результаты (fan-in)
 	var finalErr error
-	for i := 0; i < len(shortIDs); i += batchSize {
-		if err := <-results; err != nil && finalErr == nil {
+	processedBatches := 0
+	totalBatches := (len(shortIDs) + batchSize - 1) / batchSize
+
+	for err := range results {
+		processedBatches++
+		if err != nil && finalErr == nil {
 			finalErr = err
 		}
+		log.Printf("Processed batch %d/%d", processedBatches, totalBatches)
 	}
 
+	log.Printf("Completed batch deletion: %d/%d batches processed", processedBatches, totalBatches)
 	return finalErr
 }
 
@@ -662,5 +675,41 @@ func processBatch(ctx context.Context, shortIDs []string, userID string) error {
 	if useDB {
 		return dbstorage.DeleteURLs(ctx, shortIDs, userID)
 	}
+
+	// Для файлового хранилища и памяти
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	// Помечаем URL как удаленные
+	for _, shortID := range shortIDs {
+		// Ищем в файловом хранилище
+		if filePath := GetStorageFilePath(); filePath != "" {
+			for i := range URLMappings {
+				if URLMappings[i].ShortURL == shortID && URLMappings[i].UserID == userID {
+					URLMappings[i].DeletedFlag = true
+				}
+			}
+		} else {
+			// Для in-memory хранилища - удаляем из urlMap
+			delete(urlMap, shortID)
+			// И из userURLsMap
+			if userURLs, exists := userURLsMap[userID]; exists {
+				for i, id := range userURLs {
+					if id == shortID {
+						userURLsMap[userID] = append(userURLs[:i], userURLs[i+1:]...)
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Сохраняем изменения в файл, если указан путь
+	if filePath := GetStorageFilePath(); filePath != "" {
+		if err := SaveToFile(filePath); err != nil {
+			return fmt.Errorf("failed to save to file: %w", err)
+		}
+	}
+
 	return nil
 }
