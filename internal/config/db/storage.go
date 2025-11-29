@@ -99,21 +99,27 @@ func (s *DBStorage) SaveURL(ctx context.Context, uuid, shortID, originalURL stri
 
 // SaveURLWithConflictCheck - сохранение URL с проверкой конфликта
 func (s *DBStorage) SaveURLWithConflictCheck(ctx context.Context, uuid, shortID, originalURL, userID string) (string, error) {
-	_, err := s.DB.ExecContext(ctx,
-		`INSERT INTO url_mappings (uuid, short_url, original_url) VALUES ($1, $2, $3, $4)`,
+	// Сначала проверяем, существует ли уже такой URL
+	existingShortURL, err := s.GetShortURLByOriginalURL(ctx, originalURL)
+	if err == nil && existingShortURL != "" {
+		// URL уже существует - возвращаем существующий shortURL
+		return existingShortURL, ErrURLConflict
+	}
+
+	// Если URL не существует, вставляем новую запись
+	_, err = s.DB.ExecContext(ctx,
+		`INSERT INTO url_mappings (uuid, short_url, original_url, user_id) VALUES ($1, $2, $3, $4)`,
 		uuid, shortID, originalURL, userID)
 
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
-			// Если это нарушение уникальности по original_url, получаем существующий short_url
-			if pgErr.ConstraintName == "idx_original_url" {
-				existingShortURL, err := s.GetShortURLByOriginalURL(ctx, originalURL)
-				if err != nil {
-					return "", fmt.Errorf("failed to get existing short URL: %w", err)
-				}
-				return existingShortURL, ErrURLConflict
+			// Если все же произошел конфликт (параллельный запрос), получаем существующий short_url
+			existingShortURL, err := s.GetShortURLByOriginalURL(ctx, originalURL)
+			if err != nil {
+				return "", fmt.Errorf("failed to get existing short URL: %w", err)
 			}
+			return existingShortURL, ErrURLConflict
 		}
 		return "", fmt.Errorf("failed to save URL: %w", err)
 	}
