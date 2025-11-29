@@ -98,10 +98,10 @@ func (s *DBStorage) SaveURL(ctx context.Context, uuid, shortID, originalURL stri
 }
 
 // SaveURLWithConflictCheck - сохранение URL с проверкой конфликта
-func (s *DBStorage) SaveURLWithConflictCheck(ctx context.Context, uuid, shortID, originalURL string) (string, error) {
+func (s *DBStorage) SaveURLWithConflictCheck(ctx context.Context, uuid, shortID, originalURL, userID string) (string, error) {
 	_, err := s.DB.ExecContext(ctx,
-		`INSERT INTO url_mappings (uuid, short_url, original_url) VALUES ($1, $2, $3)`,
-		uuid, shortID, originalURL)
+		`INSERT INTO url_mappings (uuid, short_url, original_url) VALUES ($1, $2, $3, $4)`,
+		uuid, shortID, originalURL, userID)
 
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -145,4 +145,35 @@ func (s *DBStorage) GetURL(ctx context.Context, shortID string) (string, error) 
 		return "", fmt.Errorf("failed to get URL: %w", err)
 	}
 	return originalURL, nil
+}
+
+// Метод для получения URL пользователя
+func (s *DBStorage) GetUserURLs(ctx context.Context, userID string) ([]struct {
+	ShortURL    string
+	OriginalURL string
+}, error) {
+	var urls []struct {
+		ShortURL    string
+		OriginalURL string
+	}
+
+	rows, err := s.DB.QueryContext(ctx,
+		"SELECT short_url, original_url FROM url_mappings WHERE user_id = $1", userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var url struct {
+			ShortURL    string
+			OriginalURL string
+		}
+		if err := rows.Scan(&url.ShortURL, &url.OriginalURL); err != nil {
+			return nil, err
+		}
+		urls = append(urls, url)
+	}
+
+	return urls, nil
 }

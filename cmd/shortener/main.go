@@ -40,6 +40,8 @@ func main() {
 
 	r.Get("/{id}", router.RedirectHandler)
 	r.Get("/ping", router.PingHandler)
+	r.Get("/api/user/urls", router.GetUserURLsHandler(cfg.BaseURL))
+
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "Shortener service is running at %s", cfg.BaseURL)

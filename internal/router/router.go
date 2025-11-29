@@ -1,6 +1,9 @@
 package router
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,8 +20,9 @@ import (
 )
 
 var (
-	dbstorage *db.DBStorage
-	useDB     bool
+	dbstorage    *db.DBStorage
+	useDB        bool
+	cookieSecret = []byte("ncklsj8s9c8ysgjc-scishb")
 )
 
 var req struct {
@@ -35,6 +39,80 @@ type BatchResponseItem struct {
 	ShortURL      string `json:"short_url"`
 }
 
+type UserURLResponse struct {
+	ShortURL    string `json:"short_url"`
+	OriginalURL string `json:"original_url"`
+}
+
+// authenticateUser - аутентификация пользователя и установка куки
+func authenticateUser(w http.ResponseWriter, r *http.Request) string {
+	cookieName := "user_id"
+
+	// Пытаемся получить существующую куку
+	cookie, err := r.Cookie(cookieName)
+	if err == nil && cookie != nil {
+		// Проверяем подпись куки
+		userID, valid := verifyCookie(cookie.Value)
+		if valid {
+			return userID
+		}
+	}
+
+	// Создаем нового пользователя
+	userID := uuid.New().String()
+	signedCookie := signUserID(userID)
+
+	// Устанавливаем новую куку
+	newCookie := &http.Cookie{
+		Name:     cookieName,
+		Value:    signedCookie,
+		Path:     "/",
+		MaxAge:   24 * 60 * 60, // 24 часа
+		HttpOnly: true,
+		Secure:   false, // В продакшене должно быть true
+		SameSite: http.SameSiteLaxMode,
+	}
+
+	http.SetCookie(w, newCookie)
+	return userID
+}
+
+// signUserID - подписывает userID с помощью HMAC
+func signUserID(userID string) string {
+	mac := hmac.New(sha256.New, cookieSecret)
+	mac.Write([]byte(userID))
+	signature := hex.EncodeToString(mac.Sum(nil))
+	return userID + "." + signature
+}
+
+// verifyCookie - проверяет подпись куки
+func verifyCookie(cookieValue string) (string, bool) {
+	parts := strings.Split(cookieValue, ".")
+	if len(parts) != 2 {
+		return "", false
+	}
+
+	userID := parts[0]
+	expectedSignature := parts[1]
+
+	mac := hmac.New(sha256.New, cookieSecret)
+	mac.Write([]byte(userID))
+	actualSignature := hex.EncodeToString(mac.Sum(nil))
+
+	return userID, hmac.Equal([]byte(expectedSignature), []byte(actualSignature))
+}
+
+// getAuthenticatedUserID - получает аутентифицированный userID из куки
+func getAuthenticatedUserID(r *http.Request) (string, bool) {
+	cookie, err := r.Cookie("user_id")
+	if err != nil {
+		return "", false
+	}
+
+	userID, valid := verifyCookie(cookie.Value)
+	return userID, valid
+}
+
 // InitDBStorage - инициализация хранилища в базе данных
 func InitDBStorage(dsn string) error {
 	storage, err := db.NewDBStorage(dsn)
@@ -49,6 +127,9 @@ func InitDBStorage(dsn string) error {
 // ShortenJSONHandler - обработчик POST-запросов в формате JSON.
 func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Аутентифицируем пользователя
+		userID := authenticateUser(w, r)
+
 		if r.Header.Get("Content-Type") != "application/json" {
 			http.Error(w, "", http.StatusBadRequest)
 			return
@@ -75,7 +156,7 @@ func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r 
 		newUUID := uuid.New().String()
 
 		if useDB {
-			savedShortID, err := dbstorage.SaveURLWithConflictCheck(r.Context(), newUUID, shortID, url)
+			savedShortID, err := dbstorage.SaveURLWithConflictCheck(r.Context(), newUUID, shortID, url, userID)
 			if err != nil {
 				if errors.Is(err, db.ErrURLConflict) {
 					// URL уже существует - возвращаем конфликт
@@ -97,12 +178,18 @@ func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r 
 				UUID:        newUUID,
 				ShortURL:    shortID,
 				OriginalURL: url,
+				UserID:      userID,
 			})
 			if err := SaveToFile(filePath); err != nil {
 				log.Printf("Error saving to file: %v", err)
 			}
 		} else {
 			urlMap[shortID] = url
+			if userURLs, exists := userURLsMap[userID]; exists {
+				userURLsMap[userID] = append(userURLs, shortID)
+			} else {
+				userURLsMap[userID] = []string{shortID}
+			}
 		}
 
 		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
@@ -124,6 +211,7 @@ func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r 
 // ShortenHandler - обработчик POST-запросов.
 func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		userID := authenticateUser(w, r)
 		if r.Header.Get("Content-Type") != "text/plain" {
 			http.Error(w, "", http.StatusBadRequest)
 			return
@@ -147,7 +235,7 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 		newUUID := uuid.New().String()
 
 		if useDB {
-			savedShortID, err := dbstorage.SaveURLWithConflictCheck(r.Context(), newUUID, shortID, url)
+			savedShortID, err := dbstorage.SaveURLWithConflictCheck(r.Context(), newUUID, shortID, url, userID)
 			if err != nil {
 				if errors.Is(err, db.ErrURLConflict) {
 					// URL уже существует - возвращаем конфликт
@@ -168,12 +256,18 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 				UUID:        newUUID,
 				ShortURL:    shortID,
 				OriginalURL: url,
+				UserID:      userID,
 			})
 			if err := SaveToFile(filePath); err != nil {
 				log.Printf("Error saving to file: %v", err)
 			}
 		} else {
 			urlMap[shortID] = url
+			if userURLs, exists := userURLsMap[userID]; exists {
+				userURLsMap[userID] = append(userURLs, shortID)
+			} else {
+				userURLsMap[userID] = []string{shortID}
+			}
 		}
 
 		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
@@ -183,6 +277,82 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusCreated)
 		w.Write([]byte(resp))
+	}
+}
+
+// GetUserURLsHandler - обработчик для получения всех URL пользователя
+func GetUserURLsHandler(baseURL string) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Проверяем аутентификацию
+		userID, valid := getAuthenticatedUserID(r)
+		if !valid {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		var userURLs []UserURLResponse
+
+		if useDB {
+			// Получаем URL пользователя из базы данных
+			urls, err := dbstorage.GetUserURLs(r.Context(), userID)
+			if err != nil {
+				log.Printf("Error getting user URLs from database: %v", err)
+				http.Error(w, "Database error", http.StatusInternalServerError)
+				return
+			}
+
+			for _, url := range urls {
+				userURLs = append(userURLs, UserURLResponse{
+					ShortURL:    fmt.Sprintf("%s/%s", baseURL, url.ShortURL),
+					OriginalURL: url.OriginalURL,
+				})
+			}
+		} else {
+			// Получаем URL пользователя из файлового хранилища или памяти
+			mutex.Lock()
+			defer mutex.Unlock()
+
+			if filePath := GetStorageFilePath(); filePath != "" {
+				// Ищем в файловом хранилище
+				for _, mapping := range URLMappings {
+					if mapping.UserID == userID {
+						userURLs = append(userURLs, UserURLResponse{
+							ShortURL:    fmt.Sprintf("%s/%s", baseURL, mapping.ShortURL),
+							OriginalURL: mapping.OriginalURL,
+						})
+					}
+				}
+			} else {
+				// Ищем в in-memory хранилище
+				if shortIDs, exists := userURLsMap[userID]; exists {
+					for _, shortID := range shortIDs {
+						if originalURL, exists := urlMap[shortID]; exists {
+							userURLs = append(userURLs, UserURLResponse{
+								ShortURL:    fmt.Sprintf("%s/%s", baseURL, shortID),
+								OriginalURL: originalURL,
+							})
+						}
+					}
+				}
+			}
+		}
+
+		// Если нет URL, возвращаем 204 No Content
+		if len(userURLs) == 0 {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		// Возвращаем список URL
+		response, err := json.Marshal(userURLs)
+		if err != nil {
+			http.Error(w, "Error creating response", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(response)
 	}
 }
 
@@ -229,6 +399,7 @@ func PingHandler(w http.ResponseWriter, r *http.Request) {
 // BatchShortenHandler - обработчик для пакетного сокращения URL
 func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		userID := authenticateUser(w, r)
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -289,8 +460,8 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 
 				// Используем SaveURLWithConflictCheck логику в транзакции
 				_, err := tx.ExecContext(r.Context(),
-					`INSERT INTO url_mappings (uuid, short_url, original_url) VALUES ($1, $2, $3)`,
-					newUUID, shortID, item.OriginalURL)
+					`INSERT INTO url_mappings (uuid, short_url, original_url) VALUES ($1, $2, $3, $4)`,
+					newUUID, shortID, item.OriginalURL, userID)
 
 				if err != nil {
 					var pgErr *pgconn.PgError
@@ -341,7 +512,14 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 						UUID:        newUUID,
 						ShortURL:    shortID,
 						OriginalURL: item.OriginalURL,
+						UserID:      userID,
 					})
+				} else {
+					if userURLs, exists := userURLsMap[userID]; exists {
+						userURLsMap[userID] = append(userURLs, shortID)
+					} else {
+						userURLsMap[userID] = []string{shortID}
+					}
 				}
 
 				batchResponses = append(batchResponses, BatchResponseItem{

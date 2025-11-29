@@ -12,10 +12,12 @@ type URLMapping struct {
 	UUID        string `json:"uuid"`
 	ShortURL    string `json:"short_url"`
 	OriginalURL string `json:"original_url"`
+	UserID      string `json:"user_id"`
 }
 
 var (
 	urlMap      = make(map[string]string)
+	userURLsMap = make(map[string][]string)
 	URLMappings []URLMapping
 	mutex       sync.Mutex
 	storageFile string // Глобальная переменная для пути к файлу
