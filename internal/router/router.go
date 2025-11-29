@@ -375,52 +375,22 @@ func RedirectHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
-
+	var exists bool
 	var url string
 	var err error
-
 	if useDB {
 		url, err = dbstorage.GetURL(r.Context(), id)
 		if err != nil {
-			if err.Error() == "URL was deleted" {
-				http.Error(w, "URL was deleted", http.StatusGone)
-				return
-			}
 			http.Error(w, "", http.StatusBadRequest)
 			return
 		}
 	} else {
-		// Для файлового хранилища
-		mutex.Lock()
-		defer mutex.Unlock()
-
-		if filePath := GetStorageFilePath(); filePath != "" {
-			for _, mapping := range URLMappings {
-				if mapping.ShortURL == id {
-					if mapping.Deleted {
-						http.Error(w, "URL was deleted", http.StatusGone)
-						return
-					}
-					url = mapping.OriginalURL
-					break
-				}
-			}
-		} else {
-			// Для in-memory хранилища
-			var exists bool
-			url, exists = urlMap[id]
-			if !exists {
-				http.Error(w, "", http.StatusBadRequest)
-				return
-			}
+		url, exists = urlMap[id]
+		if !exists {
+			http.Error(w, "", http.StatusBadRequest)
+			return
 		}
 	}
-
-	if url == "" {
-		http.Error(w, "", http.StatusBadRequest)
-		return
-	}
-
 	w.Header().Set("Location", url)
 	w.WriteHeader(http.StatusTemporaryRedirect)
 }
