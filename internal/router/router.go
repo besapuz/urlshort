@@ -324,7 +324,7 @@ func GetUserURLsHandler(baseURL string) func(w http.ResponseWriter, r *http.Requ
 			if filePath := GetStorageFilePath(); filePath != "" {
 				// Ищем в файловом хранилище
 				for _, mapping := range URLMappings {
-					if mapping.UserID == userID && !mapping.Deleted { // Добавляем проверку на удаление
+					if mapping.UserID == userID && !mapping.DeletedFlag { // Добавляем проверку на удаление
 						userURLs = append(userURLs, UserURLResponse{
 							ShortURL:    fmt.Sprintf("%s/%s", fullBaseURL, mapping.ShortURL),
 							OriginalURL: mapping.OriginalURL,
@@ -534,7 +534,7 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 	}
 }
 
-// DeleteURLsHandler - обработчик для удаления URL
+// router.go - улучшенный DeleteURLsHandler с fanIn паттерном
 func DeleteURLsHandler() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Проверяем аутентификацию
@@ -565,30 +565,26 @@ func DeleteURLsHandler() func(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Для базы данных
+		// Для базы данных - используем улучшенный метод с batch update
 		if useDB {
-			// Запускаем удаление в отдельной горутине (асинхронно)
-			go func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				defer cancel()
-
-				if err := dbstorage.DeleteURLs(ctx, shortIDs, userID); err != nil {
-					log.Printf("Error deleting URLs: %v", err)
+			go func(ids []string, uid string) {
+				if err := deleteURLsBatch(ids, uid); err != nil {
+					log.Printf("Error deleting URLs in batch: %v", err)
 				}
-			}()
+			}(shortIDs, userID)
 		} else {
 			// Для файлового хранилища и памяти
-			go func() {
+			go func(ids []string, uid string) {
 				mutex.Lock()
 				defer mutex.Unlock()
 
-				// Помечаем URL как удаленные в памяти
-				for _, shortID := range shortIDs {
+				// Помечаем URL как удаленные
+				for _, shortID := range ids {
 					// Ищем в файловом хранилище
 					if filePath := GetStorageFilePath(); filePath != "" {
 						for i := range URLMappings {
-							if URLMappings[i].ShortURL == shortID && URLMappings[i].UserID == userID {
-								URLMappings[i].Deleted = true
+							if URLMappings[i].ShortURL == shortID && URLMappings[i].UserID == uid {
+								URLMappings[i].DeletedFlag = true
 							}
 						}
 						// Сохраняем изменения в файл
@@ -596,22 +592,75 @@ func DeleteURLsHandler() func(w http.ResponseWriter, r *http.Request) {
 							log.Printf("Error saving to file: %v", err)
 						}
 					} else {
-						// Для in-memory хранилища просто удаляем из userURLsMap
-						if userURLs, exists := userURLsMap[userID]; exists {
+						// Для in-memory хранилища - удаляем из urlMap
+						delete(urlMap, shortID)
+						// И из userURLsMap
+						if userURLs, exists := userURLsMap[uid]; exists {
 							for i, id := range userURLs {
 								if id == shortID {
-									// Удаляем из списка пользователя
-									userURLsMap[userID] = append(userURLs[:i], userURLs[i+1:]...)
+									userURLsMap[uid] = append(userURLs[:i], userURLs[i+1:]...)
 									break
 								}
 							}
 						}
 					}
 				}
-			}()
+			}(shortIDs, userID)
 		}
 
 		// Возвращаем Accepted, так как удаление происходит асинхронно
 		w.WriteHeader(http.StatusAccepted)
 	}
+}
+
+// deleteURLsBatch - улучшенная версия с batch update и fanIn паттерном
+func deleteURLsBatch(shortIDs []string, userID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Используем каналы для реализации fanIn паттерна
+	batchSize := 100 // Размер батча для обновления
+	batches := make(chan []string)
+	results := make(chan error)
+
+	// Горутина для разбивки на батчи
+	go func() {
+		defer close(batches)
+		for i := 0; i < len(shortIDs); i += batchSize {
+			end := i + batchSize
+			if end > len(shortIDs) {
+				end = len(shortIDs)
+			}
+			batches <- shortIDs[i:end]
+		}
+	}()
+
+	// Запускаем воркеры для обработки батчей
+	numWorkers := 3
+	for i := 0; i < numWorkers; i++ {
+		go func() {
+			for batch := range batches {
+				err := processBatch(ctx, batch, userID)
+				results <- err
+			}
+		}()
+	}
+
+	// Собираем результаты (fanIn)
+	var finalErr error
+	for i := 0; i < len(shortIDs); i += batchSize {
+		if err := <-results; err != nil && finalErr == nil {
+			finalErr = err
+		}
+	}
+
+	return finalErr
+}
+
+// processBatch - обрабатывает один батч URL для удаления
+func processBatch(ctx context.Context, shortIDs []string, userID string) error {
+	if useDB {
+		return dbstorage.DeleteURLs(ctx, shortIDs, userID)
+	}
+	return nil
 }
