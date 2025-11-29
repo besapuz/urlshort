@@ -147,32 +147,33 @@ func (s *DBStorage) GetURL(ctx context.Context, shortID string) (string, error) 
 	return originalURL, nil
 }
 
-// Метод для получения URL пользователя
-func (s *DBStorage) GetUserURLs(ctx context.Context, userID string) ([]struct {
-	ShortURL    string
-	OriginalURL string
-}, error) {
-	var urls []struct {
-		ShortURL    string
-		OriginalURL string
-	}
+type URLMapping struct {
+	ShortURL    string `json:"short_url"`
+	OriginalURL string `json:"original_url"`
+}
+
+// GetUserURLs - получение всех URL пользователя
+func (s *DBStorage) GetUserURLs(ctx context.Context, userID string) ([]URLMapping, error) {
+	var urls []URLMapping
 
 	rows, err := s.DB.QueryContext(ctx,
 		"SELECT short_url, original_url FROM url_mappings WHERE user_id = $1", userID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to query user URLs: %w", err)
 	}
 	defer rows.Close()
 
 	for rows.Next() {
-		var url struct {
-			ShortURL    string
-			OriginalURL string
-		}
+		var url URLMapping
 		if err := rows.Scan(&url.ShortURL, &url.OriginalURL); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to scan user URL: %w", err)
 		}
 		urls = append(urls, url)
+	}
+
+	// Проверяем ошибки после итерации по rows
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error during rows iteration: %w", err)
 	}
 
 	return urls, nil

@@ -185,11 +185,6 @@ func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r 
 			}
 		} else {
 			urlMap[shortID] = url
-			if userURLs, exists := userURLsMap[userID]; exists {
-				userURLsMap[userID] = append(userURLs, shortID)
-			} else {
-				userURLsMap[userID] = []string{shortID}
-			}
 		}
 
 		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
@@ -263,11 +258,6 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 			}
 		} else {
 			urlMap[shortID] = url
-			if userURLs, exists := userURLsMap[userID]; exists {
-				userURLsMap[userID] = append(userURLs, shortID)
-			} else {
-				userURLsMap[userID] = []string{shortID}
-			}
 		}
 
 		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
@@ -514,12 +504,6 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 						OriginalURL: item.OriginalURL,
 						UserID:      userID,
 					})
-				} else {
-					if userURLs, exists := userURLsMap[userID]; exists {
-						userURLsMap[userID] = append(userURLs, shortID)
-					} else {
-						userURLsMap[userID] = []string{shortID}
-					}
 				}
 
 				batchResponses = append(batchResponses, BatchResponseItem{
