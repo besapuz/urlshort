@@ -147,14 +147,15 @@ func (s *DBStorage) GetURL(ctx context.Context, shortID string) (string, error) 
 	return originalURL, nil
 }
 
-type URLMapping struct {
+type UserURL struct {
 	ShortURL    string `json:"short_url"`
 	OriginalURL string `json:"original_url"`
 }
 
 // GetUserURLs - получение всех URL пользователя
-func (s *DBStorage) GetUserURLs(ctx context.Context, userID string) ([]URLMapping, error) {
-	var urls []URLMapping
+// GetUserURLs - получение всех URL пользователя
+func (s *DBStorage) GetUserURLs(ctx context.Context, userID string) ([]UserURL, error) {
+	var urls []UserURL
 
 	rows, err := s.DB.QueryContext(ctx,
 		"SELECT short_url, original_url FROM url_mappings WHERE user_id = $1", userID)
@@ -164,7 +165,7 @@ func (s *DBStorage) GetUserURLs(ctx context.Context, userID string) ([]URLMappin
 	defer rows.Close()
 
 	for rows.Next() {
-		var url URLMapping
+		var url UserURL
 		if err := rows.Scan(&url.ShortURL, &url.OriginalURL); err != nil {
 			return nil, fmt.Errorf("failed to scan user URL: %w", err)
 		}

@@ -15,8 +15,6 @@ import (
 	"github.com/besapuz/urlshort/internal/app"
 	"github.com/besapuz/urlshort/internal/config/db"
 	"github.com/google/uuid"
-	"github.com/jackc/pgerrcode"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
 var (
@@ -185,6 +183,11 @@ func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r 
 			}
 		} else {
 			urlMap[shortID] = url
+			if userURLs, exists := userURLsMap[userID]; exists {
+				userURLsMap[userID] = append(userURLs, shortID)
+			} else {
+				userURLsMap[userID] = []string{shortID}
+			}
 		}
 
 		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
@@ -258,6 +261,11 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 			}
 		} else {
 			urlMap[shortID] = url
+			if userURLs, exists := userURLsMap[userID]; exists {
+				userURLsMap[userID] = append(userURLs, shortID)
+			} else {
+				userURLsMap[userID] = []string{shortID}
+			}
 		}
 
 		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
@@ -436,53 +444,30 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 		var batchResponses []BatchResponseItem
 
 		if useDB {
-			tx, err := dbstorage.DB.Begin()
-			if err != nil {
-				log.Printf("Error starting transaction: %v", err)
-				http.Error(w, "Database error", http.StatusInternalServerError)
-				return
-			}
-			defer tx.Rollback()
-
+			// Используем отдельные вызовы SaveURLWithConflictCheck для каждого URL
 			for _, item := range batchRequests {
 				shortID := app.GenerateShortID(8)
 				newUUID := uuid.New().String()
 
-				// Используем SaveURLWithConflictCheck логику в транзакции
-				_, err := tx.ExecContext(r.Context(),
-					`INSERT INTO url_mappings (uuid, short_url, original_url) VALUES ($1, $2, $3, $4)`,
-					newUUID, shortID, item.OriginalURL, userID)
-
+				savedShortID, err := dbstorage.SaveURLWithConflictCheck(r.Context(), newUUID, shortID, item.OriginalURL, userID)
 				if err != nil {
-					var pgErr *pgconn.PgError
-					if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation && pgErr.ConstraintName == "idx_original_url" {
-						// Получаем существующий shortURL
-						var existingShortURL string
-						err := tx.QueryRowContext(r.Context(),
-							`SELECT short_url FROM url_mappings WHERE original_url = $1`, item.OriginalURL).Scan(&existingShortURL)
-						if err != nil {
-							log.Printf("Error getting existing short URL: %v", err)
-							http.Error(w, "Database error", http.StatusInternalServerError)
-							return
-						}
-						shortID = existingShortURL
-					} else {
-						log.Printf("Error saving URL to database: %v", err)
-						http.Error(w, "Database error", http.StatusInternalServerError)
-						return
+					if errors.Is(err, db.ErrURLConflict) {
+						// URL уже существует - используем существующий
+						batchResponses = append(batchResponses, BatchResponseItem{
+							CorrelationID: item.CorrelationID,
+							ShortURL:      fmt.Sprintf("%s/%s", baseURL, savedShortID),
+						})
+						continue
 					}
+					log.Printf("Error saving URL to database: %v", err)
+					http.Error(w, "Database error", http.StatusInternalServerError)
+					return
 				}
 
 				batchResponses = append(batchResponses, BatchResponseItem{
 					CorrelationID: item.CorrelationID,
-					ShortURL:      fmt.Sprintf("%s/%s", baseURL, shortID),
+					ShortURL:      fmt.Sprintf("%s/%s", baseURL, savedShortID),
 				})
-			}
-
-			if err := tx.Commit(); err != nil {
-				log.Printf("Error committing transaction: %v", err)
-				http.Error(w, "Database error", http.StatusInternalServerError)
-				return
 			}
 		} else {
 			// Обработка для файлового хранилища и памяти
@@ -504,6 +489,13 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 						OriginalURL: item.OriginalURL,
 						UserID:      userID,
 					})
+				} else {
+					// Для in-memory хранилища сохраняем userID
+					if userURLs, exists := userURLsMap[userID]; exists {
+						userURLsMap[userID] = append(userURLs, shortID)
+					} else {
+						userURLsMap[userID] = []string{shortID}
+					}
 				}
 
 				batchResponses = append(batchResponses, BatchResponseItem{
@@ -516,7 +508,6 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 			if filePath != "" {
 				if err := SaveToFile(filePath); err != nil {
 					log.Printf("Error saving to file: %v", err)
-					// Не прерываем выполнение, только логируем ошибку
 				}
 			}
 		}
