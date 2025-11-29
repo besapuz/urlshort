@@ -372,56 +372,26 @@ func RedirectHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
-
+	var exists bool
 	var url string
-	var deleted bool
 	var err error
-
 	if useDB {
-		// Используем новый метод для получения URL и статуса удаления
-		url, deleted, err = dbstorage.GetURLWithStatus(r.Context(), id)
+		url, err = dbstorage.GetURL(r.Context(), id)
 		if err != nil {
-			// Если URL не найден
-			http.Error(w, "", http.StatusNotFound)
+			if err.Error() == "URL was deleted" {
+				http.Error(w, "URL was deleted", http.StatusGone)
+				return
+			}
+			http.Error(w, "", http.StatusBadRequest)
 			return
 		}
 	} else {
-		// Для файлового хранилища и памяти
-		mutex.Lock()
-		defer mutex.Unlock()
-
-		if filePath := GetStorageFilePath(); filePath != "" {
-			// Ищем в файловом хранилище
-			for _, mapping := range URLMappings {
-				if mapping.ShortURL == id {
-					url = mapping.OriginalURL
-					deleted = mapping.DeletedFlag
-					break
-				}
-			}
-			if url == "" {
-				http.Error(w, "", http.StatusNotFound)
-				return
-			}
-		} else {
-			// In-memory хранилище
-			var exists bool
-			url, exists = urlMap[id]
-			if !exists {
-				http.Error(w, "", http.StatusNotFound)
-				return
-			}
-			// В in-memory хранилище URL удаляется полностью, поэтому если он существует - не удален
-			deleted = false
+		url, exists = urlMap[id]
+		if !exists {
+			http.Error(w, "", http.StatusBadRequest)
+			return
 		}
 	}
-
-	// Проверяем статус удаления
-	if deleted {
-		w.WriteHeader(http.StatusGone)
-		return
-	}
-
 	w.Header().Set("Location", url)
 	w.WriteHeader(http.StatusTemporaryRedirect)
 }
