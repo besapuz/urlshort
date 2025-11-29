@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/besapuz/urlshort/internal/app"
 	"github.com/besapuz/urlshort/internal/config/db"
@@ -303,9 +305,13 @@ func GetUserURLsHandler(baseURL string) func(w http.ResponseWriter, r *http.Requ
 				return
 			}
 
+			fullBaseURL := baseURL
+			if !strings.HasPrefix(fullBaseURL, "http://") && !strings.HasPrefix(fullBaseURL, "https://") {
+				fullBaseURL = "http://" + fullBaseURL
+			}
+
 			for _, url := range urls {
-				userURLs = append(userURLs, UserURLResponse{
-					ShortURL:    fmt.Sprintf("%s/%s", baseURL, url.ShortURL),
+				userURLs = append(userURLs, UserURLResponse{ShortURL: fmt.Sprintf("%s/%s", fullBaseURL, url.ShortURL), // Используем fullBaseURL с протоколом
 					OriginalURL: url.OriginalURL,
 				})
 			}
@@ -314,12 +320,17 @@ func GetUserURLsHandler(baseURL string) func(w http.ResponseWriter, r *http.Requ
 			mutex.Lock()
 			defer mutex.Unlock()
 
+			fullBaseURL := baseURL
+			if !strings.HasPrefix(fullBaseURL, "http://") && !strings.HasPrefix(fullBaseURL, "https://") {
+				fullBaseURL = "http://" + fullBaseURL
+			}
+
 			if filePath := GetStorageFilePath(); filePath != "" {
 				// Ищем в файловом хранилище
 				for _, mapping := range URLMappings {
-					if mapping.UserID == userID {
+					if mapping.UserID == userID && !mapping.Deleted { // Добавляем проверку на удаление
 						userURLs = append(userURLs, UserURLResponse{
-							ShortURL:    fmt.Sprintf("%s/%s", baseURL, mapping.ShortURL),
+							ShortURL:    fmt.Sprintf("%s/%s", fullBaseURL, mapping.ShortURL),
 							OriginalURL: mapping.OriginalURL,
 						})
 					}
@@ -330,7 +341,7 @@ func GetUserURLsHandler(baseURL string) func(w http.ResponseWriter, r *http.Requ
 					for _, shortID := range shortIDs {
 						if originalURL, exists := urlMap[shortID]; exists {
 							userURLs = append(userURLs, UserURLResponse{
-								ShortURL:    fmt.Sprintf("%s/%s", baseURL, shortID),
+								ShortURL:    fmt.Sprintf("%s/%s", fullBaseURL, shortID),
 								OriginalURL: originalURL,
 							})
 						}
@@ -339,7 +350,6 @@ func GetUserURLsHandler(baseURL string) func(w http.ResponseWriter, r *http.Requ
 			}
 		}
 
-		// Если нет URL, возвращаем 204 No Content
 		if len(userURLs) == 0 {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -365,22 +375,52 @@ func RedirectHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
-	var exists bool
+
 	var url string
 	var err error
+
 	if useDB {
 		url, err = dbstorage.GetURL(r.Context(), id)
 		if err != nil {
+			if err.Error() == "URL was deleted" {
+				http.Error(w, "URL was deleted", http.StatusGone)
+				return
+			}
 			http.Error(w, "", http.StatusBadRequest)
 			return
 		}
 	} else {
-		url, exists = urlMap[id]
-		if !exists {
-			http.Error(w, "", http.StatusBadRequest)
-			return
+		// Для файлового хранилища
+		mutex.Lock()
+		defer mutex.Unlock()
+
+		if filePath := GetStorageFilePath(); filePath != "" {
+			for _, mapping := range URLMappings {
+				if mapping.ShortURL == id {
+					if mapping.Deleted {
+						http.Error(w, "URL was deleted", http.StatusGone)
+						return
+					}
+					url = mapping.OriginalURL
+					break
+				}
+			}
+		} else {
+			// Для in-memory хранилища
+			var exists bool
+			url, exists = urlMap[id]
+			if !exists {
+				http.Error(w, "", http.StatusBadRequest)
+				return
+			}
 		}
 	}
+
+	if url == "" {
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
+
 	w.Header().Set("Location", url)
 	w.WriteHeader(http.StatusTemporaryRedirect)
 }
@@ -525,5 +565,91 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		w.Write(response)
+	}
+}
+
+// DeleteURLsHandler - обработчик для удаления URL
+func DeleteURLsHandler() func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Проверяем аутентификацию
+		userID, valid := getAuthenticatedUserID(r)
+		if !valid {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		if r.Header.Get("Content-Type") != "application/json" {
+			http.Error(w, "Content-Type must be application/json", http.StatusBadRequest)
+			return
+		}
+
+		// Читаем тело запроса
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Error reading request body", http.StatusBadRequest)
+			return
+		}
+		defer r.Body.Close()
+
+		// Парсим JSON с short IDs
+		var shortIDs []string
+		if err := json.Unmarshal(body, &shortIDs); err != nil {
+			http.Error(w, "Invalid JSON format", http.StatusBadRequest)
+			return
+		}
+
+		if len(shortIDs) == 0 {
+			http.Error(w, "Empty request", http.StatusBadRequest)
+			return
+		}
+
+		// Для базы данных
+		if useDB {
+			// Запускаем удаление в отдельной горутине (асинхронно)
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+
+				if err := dbstorage.DeleteURLs(ctx, shortIDs, userID); err != nil {
+					log.Printf("Error deleting URLs: %v", err)
+				}
+			}()
+		} else {
+			// Для файлового хранилища и памяти
+			go func() {
+				mutex.Lock()
+				defer mutex.Unlock()
+
+				// Помечаем URL как удаленные в памяти
+				for _, shortID := range shortIDs {
+					// Ищем в файловом хранилище
+					if filePath := GetStorageFilePath(); filePath != "" {
+						for i := range URLMappings {
+							if URLMappings[i].ShortURL == shortID && URLMappings[i].UserID == userID {
+								URLMappings[i].Deleted = true
+							}
+						}
+						// Сохраняем изменения в файл
+						if err := SaveToFile(filePath); err != nil {
+							log.Printf("Error saving to file: %v", err)
+						}
+					} else {
+						// Для in-memory хранилища просто удаляем из userURLsMap
+						if userURLs, exists := userURLsMap[userID]; exists {
+							for i, id := range userURLs {
+								if id == shortID {
+									// Удаляем из списка пользователя
+									userURLsMap[userID] = append(userURLs[:i], userURLs[i+1:]...)
+									break
+								}
+							}
+						}
+					}
+				}
+			}()
+		}
+
+		// Возвращаем Accepted, так как удаление происходит асинхронно
+		w.WriteHeader(http.StatusAccepted)
 	}
 }

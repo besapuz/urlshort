@@ -97,7 +97,7 @@ func (s *DBStorage) SaveURL(ctx context.Context, uuid, shortID, originalURL stri
 	return nil
 }
 
-// SaveURLWithConflictCheck - сохранение URL с проверкой конфликта
+// SaveURLWithConflictCheck - обновите для работы с user_id
 func (s *DBStorage) SaveURLWithConflictCheck(ctx context.Context, uuid, shortID, originalURL, userID string) (string, error) {
 	// Сначала проверяем, существует ли уже такой URL
 	existingShortURL, err := s.GetShortURLByOriginalURL(ctx, originalURL)
@@ -138,18 +138,26 @@ func (s *DBStorage) GetShortURLByOriginalURL(ctx context.Context, originalURL st
 	return shortURL, nil
 }
 
-// GetURL - получение URL из базы данных.
+// GetURL - обновите метод получения URL для проверки флага deleted
 func (s *DBStorage) GetURL(ctx context.Context, shortID string) (string, error) {
 	var originalURL string
+	var deleted bool
+
 	err := s.DB.QueryRowContext(ctx,
-		`SELECT original_url FROM url_mappings WHERE short_url = $1`,
-		shortID).Scan(&originalURL)
+		`SELECT original_url, deleted FROM url_mappings WHERE short_url = $1`,
+		shortID).Scan(&originalURL, &deleted)
+
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return "", fmt.Errorf("URL not found for shortID: %s", shortID)
 		}
 		return "", fmt.Errorf("failed to get URL: %w", err)
 	}
+
+	if deleted {
+		return "", fmt.Errorf("URL was deleted")
+	}
+
 	return originalURL, nil
 }
 
@@ -158,13 +166,13 @@ type UserURL struct {
 	OriginalURL string `json:"original_url"`
 }
 
-// GetUserURLs - получение всех URL пользователя
-// GetUserURLs - получение всех URL пользователя
+// GetUserURLs - обновите для исключения удаленных URL
 func (s *DBStorage) GetUserURLs(ctx context.Context, userID string) ([]UserURL, error) {
 	var urls []UserURL
 
 	rows, err := s.DB.QueryContext(ctx,
-		"SELECT short_url, original_url FROM url_mappings WHERE user_id = $1", userID)
+		"SELECT short_url, original_url FROM url_mappings WHERE user_id = $1 AND deleted = false",
+		userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query user URLs: %w", err)
 	}
@@ -178,10 +186,42 @@ func (s *DBStorage) GetUserURLs(ctx context.Context, userID string) ([]UserURL, 
 		urls = append(urls, url)
 	}
 
-	// Проверяем ошибки после итерации по rows
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error during rows iteration: %w", err)
 	}
 
 	return urls, nil
+}
+
+// DeleteURLs - помечает URL как удаленные (soft delete)
+func (s *DBStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID string) error {
+	// Начинаем транзакцию
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Подготавливаем запрос
+	stmt, err := tx.PrepareContext(ctx,
+		`UPDATE url_mappings SET deleted = true WHERE short_url = $1 AND user_id = $2`)
+	if err != nil {
+		return fmt.Errorf("failed to prepare statement: %w", err)
+	}
+	defer stmt.Close()
+
+	// Выполняем для каждого shortID
+	for _, shortID := range shortIDs {
+		_, err := stmt.ExecContext(ctx, shortID, userID)
+		if err != nil {
+			return fmt.Errorf("failed to delete URL %s: %w", shortID, err)
+		}
+	}
+
+	// Коммитим транзакцию
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
 }
