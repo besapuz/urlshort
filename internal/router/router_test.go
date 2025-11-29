@@ -233,7 +233,7 @@ func TestVerifyCookie_InvalidFormat(t *testing.T) {
 func TestAuthenticateUser_NewUser(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
-
+	defer req.Body.Close()
 	userID := authenticateUser(w, req)
 
 	if userID == "" {
@@ -273,7 +273,7 @@ func TestAuthenticateUser_ExistingUser(t *testing.T) {
 	firstReq := httptest.NewRequest("GET", "/", nil)
 	firstW := httptest.NewRecorder()
 	firstUserID := authenticateUser(firstW, firstReq)
-
+	defer firstReq.Body.Close()
 	// Получаем установленную куку
 	firstCookies := firstW.Result().Cookies()
 	if len(firstCookies) == 0 {
@@ -310,6 +310,7 @@ func TestGetAuthenticatedUserID(t *testing.T) {
 	// Тест без куки
 	reqWithoutCookie := httptest.NewRequest("GET", "/", nil)
 	userID, valid := getAuthenticatedUserID(reqWithoutCookie)
+	defer reqWithoutCookie.Body.Close()
 	if valid {
 		t.Error("Request without cookie should not be valid")
 	}
