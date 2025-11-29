@@ -288,11 +288,7 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 func GetUserURLsHandler(baseURL string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Проверяем аутентификацию
-		userID, valid := getAuthenticatedUserID(r)
-		if !valid {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
+		userID := authenticateUser(w, r)
 
 		var userURLs []UserURLResponse
 
@@ -542,11 +538,7 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 func DeleteURLsHandler() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Проверяем аутентификацию
-		userID, valid := getAuthenticatedUserID(r)
-		if !valid {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
+		userID := authenticateUser(w, r)
 
 		if r.Header.Get("Content-Type") != "application/json" {
 			http.Error(w, "Content-Type must be application/json", http.StatusBadRequest)
