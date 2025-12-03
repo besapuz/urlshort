@@ -30,7 +30,7 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	router.NewCookieManager(cfg)
+	router.InitCookieManager(cfg)
 
 	r.Use(handler.GzipMiddleware)
 
