@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/besapuz/urlshort/internal/config"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -103,7 +104,7 @@ func TestShortenHandler(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
+			cfg := config.NewConfig()
 			// Сброс глобального состояния
 			urlMap = make(map[string]string)
 
@@ -115,7 +116,7 @@ func TestShortenHandler(t *testing.T) {
 			rr := httptest.NewRecorder()
 
 			// Вызов обработчика
-			handler := ShortenHandler("http://localhost:8080")
+			handler := ShortenHandler("http://localhost:8080", cfg.GetCookieSecret())
 			handler(rr, req)
 
 			// Проверка статуса
@@ -166,6 +167,7 @@ func TestShortenJSONHandler(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.NewConfig()
 
 			// Сброс глобального состояния
 			urlMap = make(map[string]string)
@@ -178,7 +180,7 @@ func TestShortenJSONHandler(t *testing.T) {
 			rr := httptest.NewRecorder()
 
 			// Вызов обработчика
-			handler := ShortenJSONHandler(tt.body, tt.filePath)
+			handler := ShortenJSONHandler(tt.body, tt.filePath, cfg.GetCookieSecret())
 			handler(rr, req)
 
 			// Проверка статуса

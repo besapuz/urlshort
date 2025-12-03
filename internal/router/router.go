@@ -53,10 +53,10 @@ func InitDBStorage(dsn string) error {
 }
 
 // ShortenJSONHandler - обработчик POST-запросов в формате JSON.
-func ShortenJSONHandler(baseURL, filePath string, cookieManager *CookieManager) func(w http.ResponseWriter, r *http.Request) {
+func ShortenJSONHandler(baseURL, filePath string, cookie []byte) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Аутентифицируем пользователя
-		userID := cookieManager.authenticateUser(w, r)
+		userID := authenticateUser(w, r, cookie)
 
 		if r.Header.Get("Content-Type") != "application/json" {
 			http.Error(w, "", http.StatusBadRequest)
@@ -137,9 +137,9 @@ func ShortenJSONHandler(baseURL, filePath string, cookieManager *CookieManager) 
 }
 
 // ShortenHandler - обработчик POST-запросов.
-func ShortenHandler(baseURL string, cookieManager *CookieManager) func(w http.ResponseWriter, r *http.Request) {
+func ShortenHandler(baseURL string, cookie []byte) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := cookieManager.authenticateUser(w, r)
+		userID := authenticateUser(w, r, cookie)
 		if r.Header.Get("Content-Type") != "text/plain" {
 			http.Error(w, "", http.StatusBadRequest)
 			return
@@ -209,10 +209,10 @@ func ShortenHandler(baseURL string, cookieManager *CookieManager) func(w http.Re
 }
 
 // GetUserURLsHandler - обработчик для получения всех URL пользователя
-func GetUserURLsHandler(baseURL string, cookieManager *CookieManager) func(w http.ResponseWriter, r *http.Request) {
+func GetUserURLsHandler(baseURL string, cookie []byte) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Проверяем аутентификацию
-		userID := cookieManager.authenticateUser(w, r)
+		userID := authenticateUser(w, r, cookie)
 
 		var userURLs []UserURLResponse
 
@@ -333,9 +333,9 @@ func PingHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // BatchShortenHandler - обработчик для пакетного сокращения URL
-func BatchShortenHandler(baseURL, filePath string, cookieManager *CookieManager) func(w http.ResponseWriter, r *http.Request) {
+func BatchShortenHandler(baseURL, filePath string, cookie []byte) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := cookieManager.authenticateUser(w, r)
+		userID := authenticateUser(w, r, cookie)
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -463,10 +463,10 @@ func BatchShortenHandler(baseURL, filePath string, cookieManager *CookieManager)
 }
 
 // DeleteURLsHandler - улучшенный обработчик для удаления URL с fan-in паттерном
-func DeleteURLsHandler(cookieManager *CookieManager) func(w http.ResponseWriter, r *http.Request) {
+func DeleteURLsHandler(cookie []byte) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Проверяем аутентификацию
-		userID := cookieManager.authenticateUser(w, r)
+		userID := authenticateUser(w, r, cookie)
 
 		if r.Header.Get("Content-Type") != "application/json" {
 			http.Error(w, "Content-Type must be application/json", http.StatusBadRequest)
