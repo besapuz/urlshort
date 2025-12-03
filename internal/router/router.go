@@ -2,9 +2,6 @@ package router
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,14 +13,15 @@ import (
 	"time"
 
 	"github.com/besapuz/urlshort/internal/app"
+	"github.com/besapuz/urlshort/internal/config"
 	"github.com/besapuz/urlshort/internal/config/db"
 	"github.com/google/uuid"
 )
 
 var (
-	dbstorage    *db.DBStorage
-	useDB        bool
-	cookieSecret = []byte("ncklsj8s9c8ysgjc-scishb")
+	dbstorage     *db.DBStorage
+	useDB         bool
+	cookieManager *CookieManager
 )
 
 var req struct {
@@ -45,77 +43,9 @@ type UserURLResponse struct {
 	OriginalURL string `json:"original_url"`
 }
 
-// authenticateUser - аутентификация пользователя и установка куки
-func authenticateUser(w http.ResponseWriter, r *http.Request) string {
-	cookieName := "user_id"
-
-	// Пытаемся получить существующую куку
-	cookie, err := r.Cookie(cookieName)
-	if err == nil && cookie != nil {
-		// Проверяем подпись куки
-		userID, valid := verifyCookie(cookie.Value)
-		if valid {
-			return userID
-		}
-	}
-
-	// Создаем нового пользователя
-	userID := uuid.New().String()
-	signedCookie := signUserID(userID)
-
-	// Устанавливаем новую куку
-	newCookie := &http.Cookie{
-		Name:     cookieName,
-		Value:    signedCookie,
-		Path:     "/",
-		MaxAge:   24 * 60 * 60, // 24 часа
-		HttpOnly: true,
-		Secure:   false, // В продакшене должно быть true
-		SameSite: http.SameSiteLaxMode,
-	}
-
-	http.SetCookie(w, newCookie)
-	return userID
-}
-
-// signUserID - подписывает userID с помощью HMAC
-func signUserID(userID string) string {
-	mac := hmac.New(sha256.New, cookieSecret)
-	mac.Write([]byte(userID))
-	signature := hex.EncodeToString(mac.Sum(nil))
-	return userID + "." + signature
-}
-
-// verifyCookie - проверяет подпись куки
-func verifyCookie(cookieValue string) (string, bool) {
-	parts := strings.Split(cookieValue, ".")
-	if len(parts) != 2 {
-		return "", false
-	}
-
-	userID := parts[0]
-	expectedSignature := parts[1]
-
-	mac := hmac.New(sha256.New, cookieSecret)
-	mac.Write([]byte(userID))
-	actualSignature := hex.EncodeToString(mac.Sum(nil))
-
-	return userID, hmac.Equal([]byte(expectedSignature), []byte(actualSignature))
-}
-
-// getAuthenticatedUserID - получает аутентифицированный userID из куки
-func getAuthenticatedUserID(r *http.Request) (string, bool) {
-	cookie, err := r.Cookie("user_id")
-	if err != nil {
-		return "", false
-	}
-
-	userID, valid := verifyCookie(cookie.Value)
-	if !valid {
-		return "", false
-	}
-
-	return userID, true
+// InitCookieManager инициализирует менеджер кук
+func InitCookieManager(cfg *config.Config) {
+	cookieManager = NewCookieManager(cfg)
 }
 
 // InitDBStorage - инициализация хранилища в базе данных
@@ -133,7 +63,7 @@ func InitDBStorage(dsn string) error {
 func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Аутентифицируем пользователя
-		userID := authenticateUser(w, r)
+		userID := cookieManager.authenticateUser(w, r)
 
 		if r.Header.Get("Content-Type") != "application/json" {
 			http.Error(w, "", http.StatusBadRequest)
@@ -216,7 +146,7 @@ func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r 
 // ShortenHandler - обработчик POST-запросов.
 func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := authenticateUser(w, r)
+		userID := cookieManager.authenticateUser(w, r)
 		if r.Header.Get("Content-Type") != "text/plain" {
 			http.Error(w, "", http.StatusBadRequest)
 			return
@@ -289,7 +219,7 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 func GetUserURLsHandler(baseURL string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Проверяем аутентификацию
-		userID := authenticateUser(w, r)
+		userID := cookieManager.authenticateUser(w, r)
 
 		var userURLs []UserURLResponse
 
@@ -412,7 +342,7 @@ func PingHandler(w http.ResponseWriter, r *http.Request) {
 // BatchShortenHandler - обработчик для пакетного сокращения URL
 func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := authenticateUser(w, r)
+		userID := cookieManager.authenticateUser(w, r)
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -543,7 +473,7 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 func DeleteURLsHandler() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Проверяем аутентификацию
-		userID := authenticateUser(w, r)
+		userID := cookieManager.authenticateUser(w, r)
 
 		if r.Header.Get("Content-Type") != "application/json" {
 			http.Error(w, "Content-Type must be application/json", http.StatusBadRequest)

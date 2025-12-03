@@ -14,6 +14,7 @@ type Config struct {
 	LogLevel        string
 	FileStoragePath string
 	DatabaseDSN     string
+	CookieSecret    []byte
 }
 
 func NewConfig() *Config {
@@ -42,7 +43,9 @@ func NewConfig() *Config {
 	if envDatabaseDSN := os.Getenv("DATABASE_DSN"); envDatabaseDSN != "" {
 		cfg.DatabaseDSN = envDatabaseDSN
 	}
-
+	if envCookieSecret := os.Getenv("СOOCKI_SECRET"); envCookieSecret != "" {
+		cfg.CookieSecret = []byte(envCookieSecret)
+	}
 	// Если BaseURL отсутствует, формируем его из Address
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = cfg.Address
@@ -66,4 +69,8 @@ func NewConfig() *Config {
 		panic(err)
 	}
 	return cfg
+}
+
+func (c *Config) GetCookieSecret() []byte {
+	return c.CookieSecret
 }
