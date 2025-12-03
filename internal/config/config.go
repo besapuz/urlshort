@@ -43,9 +43,13 @@ func NewConfig() *Config {
 	if envDatabaseDSN := os.Getenv("DATABASE_DSN"); envDatabaseDSN != "" {
 		cfg.DatabaseDSN = envDatabaseDSN
 	}
-	if envCookieSecret := os.Getenv("СOOCKI_SECRET"); envCookieSecret != "" {
+	if envCookieSecret := os.Getenv("СOOKIE_SECRET"); envCookieSecret != "" {
 		cfg.CookieSecret = []byte(envCookieSecret)
 	}
+	if cfg.CookieSecret == nil {
+		cfg.CookieSecret = []byte("test-secret-key-12345")
+	}
+
 	// Если BaseURL отсутствует, формируем его из Address
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = cfg.Address
