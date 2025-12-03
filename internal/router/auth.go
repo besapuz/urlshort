@@ -80,18 +80,3 @@ func (cm *CookieManager) verifyCookie(cookieValue string) (string, bool) {
 
 	return userID, hmac.Equal([]byte(expectedSignature), []byte(actualSignature))
 }
-
-// getAuthenticatedUserID - получает аутентифицированный userID из куки
-func (cm *CookieManager) getAuthenticatedUserID(r *http.Request) (string, bool) {
-	cookie, err := r.Cookie("user_id")
-	if err != nil {
-		return "", false
-	}
-
-	userID, valid := cm.verifyCookie(cookie.Value)
-	if !valid {
-		return "", false
-	}
-
-	return userID, true
-}

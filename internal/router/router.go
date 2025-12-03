@@ -13,15 +13,13 @@ import (
 	"time"
 
 	"github.com/besapuz/urlshort/internal/app"
-	"github.com/besapuz/urlshort/internal/config"
 	"github.com/besapuz/urlshort/internal/config/db"
 	"github.com/google/uuid"
 )
 
 var (
-	dbstorage     *db.DBStorage
-	useDB         bool
-	cookieManager *CookieManager
+	dbstorage *db.DBStorage
+	useDB     bool
 )
 
 var req struct {
@@ -43,11 +41,6 @@ type UserURLResponse struct {
 	OriginalURL string `json:"original_url"`
 }
 
-// InitCookieManager инициализирует менеджер кук
-func InitCookieManager(cfg *config.Config) {
-	cookieManager = NewCookieManager(cfg)
-}
-
 // InitDBStorage - инициализация хранилища в базе данных
 func InitDBStorage(dsn string) error {
 	storage, err := db.NewDBStorage(dsn)
@@ -60,7 +53,7 @@ func InitDBStorage(dsn string) error {
 }
 
 // ShortenJSONHandler - обработчик POST-запросов в формате JSON.
-func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r *http.Request) {
+func ShortenJSONHandler(baseURL, filePath string, cookieManager *CookieManager) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Аутентифицируем пользователя
 		userID := cookieManager.authenticateUser(w, r)
@@ -144,7 +137,7 @@ func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r 
 }
 
 // ShortenHandler - обработчик POST-запросов.
-func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request) {
+func ShortenHandler(baseURL string, cookieManager *CookieManager) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := cookieManager.authenticateUser(w, r)
 		if r.Header.Get("Content-Type") != "text/plain" {
@@ -216,7 +209,7 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 }
 
 // GetUserURLsHandler - обработчик для получения всех URL пользователя
-func GetUserURLsHandler(baseURL string) func(w http.ResponseWriter, r *http.Request) {
+func GetUserURLsHandler(baseURL string, cookieManager *CookieManager) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Проверяем аутентификацию
 		userID := cookieManager.authenticateUser(w, r)
@@ -340,7 +333,7 @@ func PingHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // BatchShortenHandler - обработчик для пакетного сокращения URL
-func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r *http.Request) {
+func BatchShortenHandler(baseURL, filePath string, cookieManager *CookieManager) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := cookieManager.authenticateUser(w, r)
 		if r.Method != http.MethodPost {
@@ -470,7 +463,7 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 }
 
 // DeleteURLsHandler - улучшенный обработчик для удаления URL с fan-in паттерном
-func DeleteURLsHandler() func(w http.ResponseWriter, r *http.Request) {
+func DeleteURLsHandler(cookieManager *CookieManager) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Проверяем аутентификацию
 		userID := cookieManager.authenticateUser(w, r)

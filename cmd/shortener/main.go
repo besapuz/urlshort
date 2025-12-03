@@ -16,7 +16,8 @@ import (
 func main() {
 	cfg := config.NewConfig()
 	r := chi.NewRouter()
-	router.InitCookieManager(cfg)
+
+	cookieManager := router.NewCookieManager(cfg)
 
 	if cfg.DatabaseDSN == "" {
 		router.SetStorageFile(cfg.FileStoragePath)
@@ -35,15 +36,15 @@ func main() {
 	r.Use(handler.GzipMiddleware)
 
 	// Используем старую сигнатуру, но внутри она будет сохранять в файл
-	r.Post("/", router.ShortenHandler(cfg.BaseURL))
-	r.Post("/api/shorten", router.ShortenJSONHandler(cfg.BaseURL, cfg.FileStoragePath))
-	r.Post("/api/shorten/batch", router.BatchShortenHandler(cfg.BaseURL, cfg.FileStoragePath))
+	r.Post("/", router.ShortenHandler(cfg.BaseURL, cookieManager))
+	r.Post("/api/shorten", router.ShortenJSONHandler(cfg.BaseURL, cfg.FileStoragePath, cookieManager))
+	r.Post("/api/shorten/batch", router.BatchShortenHandler(cfg.BaseURL, cfg.FileStoragePath, cookieManager))
 
 	r.Get("/{id}", router.RedirectHandler)
 	r.Get("/ping", router.PingHandler)
-	r.Get("/api/user/urls", router.GetUserURLsHandler(cfg.BaseURL))
+	r.Get("/api/user/urls", router.GetUserURLsHandler(cfg.BaseURL, cookieManager))
 
-	r.Delete("/api/user/urls", router.DeleteURLsHandler())
+	r.Delete("/api/user/urls", router.DeleteURLsHandler(cookieManager))
 
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
