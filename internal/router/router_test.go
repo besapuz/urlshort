@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/besapuz/urlshort/internal/config"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -45,12 +44,8 @@ func TestRedirectHandler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.setup()
-			cfg := config.NewConfig()
-			shortener := &URLShortener{
-				BaseURL:         cfg.BaseURL,
-				FileStoragePath: cfg.FileStoragePath,
-				CookieSecret:    cfg.GetCookieSecret(),
-			}
+
+			shortener := &URLShortener{}
 			req, err := http.NewRequest("GET", tt.path, nil)
 			if err != nil {
 				t.Fatal(err)
@@ -108,12 +103,7 @@ func TestShortenHandler(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := config.NewConfig()
-			shortener := &URLShortener{
-				BaseURL:         cfg.BaseURL,
-				FileStoragePath: cfg.FileStoragePath,
-				CookieSecret:    cfg.GetCookieSecret(),
-			}
+			shortener := &URLShortener{}
 			// Сброс глобального состояния
 			urlMap = make(map[string]string)
 
@@ -176,12 +166,7 @@ func TestShortenJSONHandler(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := config.NewConfig()
-			shortener := &URLShortener{
-				BaseURL:         cfg.BaseURL,
-				FileStoragePath: cfg.FileStoragePath,
-				CookieSecret:    cfg.GetCookieSecret(),
-			}
+			shortener := &URLShortener{}
 			// Сброс глобального состояния
 			urlMap = make(map[string]string)
 
