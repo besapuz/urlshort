@@ -45,14 +45,18 @@ func TestRedirectHandler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.setup()
-
+			cfg := config.NewConfig()
+			shortener := &URLShortener{
+				BaseURL:         cfg.BaseURL,
+				FileStoragePath: cfg.FileStoragePath,
+				CookieSecret:    cfg.GetCookieSecret(),
+			}
 			req, err := http.NewRequest("GET", tt.path, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
-
 			rr := httptest.NewRecorder()
-			RedirectHandler(rr, req)
+			shortener.RedirectHandler(rr, req)
 
 			if status := rr.Code; status != tt.expectedStatus {
 				t.Errorf("handler вернул неправильный статус: получил %v, ожидал %v", status, tt.expectedStatus)
@@ -105,6 +109,11 @@ func TestShortenHandler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := config.NewConfig()
+			shortener := &URLShortener{
+				BaseURL:         cfg.BaseURL,
+				FileStoragePath: cfg.FileStoragePath,
+				CookieSecret:    cfg.GetCookieSecret(),
+			}
 			// Сброс глобального состояния
 			urlMap = make(map[string]string)
 
@@ -116,7 +125,7 @@ func TestShortenHandler(t *testing.T) {
 			rr := httptest.NewRecorder()
 
 			// Вызов обработчика
-			handler := ShortenHandler("http://localhost:8080", cfg.GetCookieSecret())
+			handler := shortener.ShortenHandler("http://localhost:8080")
 			handler(rr, req)
 
 			// Проверка статуса
@@ -168,7 +177,11 @@ func TestShortenJSONHandler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := config.NewConfig()
-
+			shortener := &URLShortener{
+				BaseURL:         cfg.BaseURL,
+				FileStoragePath: cfg.FileStoragePath,
+				CookieSecret:    cfg.GetCookieSecret(),
+			}
 			// Сброс глобального состояния
 			urlMap = make(map[string]string)
 
@@ -180,7 +193,7 @@ func TestShortenJSONHandler(t *testing.T) {
 			rr := httptest.NewRecorder()
 
 			// Вызов обработчика
-			handler := ShortenJSONHandler(tt.body, tt.filePath, cfg.GetCookieSecret())
+			handler := shortener.ShortenJSONHandler(tt.body, tt.filePath)
 			handler(rr, req)
 
 			// Проверка статуса

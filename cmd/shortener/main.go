@@ -17,6 +17,12 @@ func main() {
 	cfg := config.NewConfig()
 	r := chi.NewRouter()
 
+	shortener := &router.URLShortener{
+		BaseURL:         cfg.BaseURL,
+		FileStoragePath: cfg.FileStoragePath,
+		CookieSecret:    cfg.GetCookieSecret(),
+	}
+
 	if cfg.DatabaseDSN == "" {
 		router.SetStorageFile(cfg.FileStoragePath)
 		if err := router.LoadFromFile(cfg.FileStoragePath); err != nil {
@@ -25,7 +31,7 @@ func main() {
 		}
 	}
 	if cfg.DatabaseDSN != "" {
-		if err := router.InitDBStorage(cfg.DatabaseDSN); err != nil {
+		if err := shortener.InitDBStorage(cfg.DatabaseDSN); err != nil {
 			fmt.Fprintf(os.Stderr, "Ошибка инициализации базы данных: %v\n", err)
 			os.Exit(1)
 		}
@@ -34,15 +40,15 @@ func main() {
 	r.Use(handler.GzipMiddleware)
 
 	// Используем старую сигнатуру, но внутри она будет сохранять в файл
-	r.Post("/", router.ShortenHandler(cfg.BaseURL, cfg.GetCookieSecret()))
-	r.Post("/api/shorten", router.ShortenJSONHandler(cfg.BaseURL, cfg.FileStoragePath, cfg.GetCookieSecret()))
-	r.Post("/api/shorten/batch", router.BatchShortenHandler(cfg.BaseURL, cfg.FileStoragePath, cfg.GetCookieSecret()))
+	r.Post("/", shortener.ShortenHandler(cfg.BaseURL))
+	r.Post("/api/shorten", shortener.ShortenJSONHandler(cfg.BaseURL, cfg.FileStoragePath))
+	r.Post("/api/shorten/batch", shortener.BatchShortenHandler(cfg.BaseURL, cfg.FileStoragePath))
 
-	r.Get("/{id}", router.RedirectHandler)
-	r.Get("/ping", router.PingHandler)
-	r.Get("/api/user/urls", router.GetUserURLsHandler(cfg.BaseURL, cfg.GetCookieSecret()))
+	r.Get("/{id}", shortener.RedirectHandler)
+	r.Get("/ping", shortener.PingHandler)
+	r.Get("/api/user/urls", shortener.GetUserURLsHandler(cfg.BaseURL))
 
-	r.Delete("/api/user/urls", router.DeleteURLsHandler(cfg.GetCookieSecret()))
+	r.Delete("/api/user/urls", shortener.DeleteURLsHandler())
 
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

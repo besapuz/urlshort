@@ -17,10 +17,13 @@ import (
 	"github.com/google/uuid"
 )
 
-var (
-	dbstorage *db.DBStorage
-	useDB     bool
-)
+type URLShortener struct {
+	DBStorage       *db.DBStorage
+	UseDB           bool
+	FileStoragePath string
+	BaseURL         string
+	CookieSecret    []byte
+}
 
 var req struct {
 	URL string `json:"url"`
@@ -42,21 +45,21 @@ type UserURLResponse struct {
 }
 
 // InitDBStorage - инициализация хранилища в базе данных
-func InitDBStorage(dsn string) error {
+func (s *URLShortener) InitDBStorage(dsn string) error {
 	storage, err := db.NewDBStorage(dsn)
 	if err != nil {
 		return err
 	}
-	dbstorage = storage
-	useDB = true
+	s.DBStorage = storage
+	s.UseDB = true
 	return nil
 }
 
 // ShortenJSONHandler - обработчик POST-запросов в формате JSON.
-func ShortenJSONHandler(baseURL, filePath string, cookie []byte) func(w http.ResponseWriter, r *http.Request) {
+func (s *URLShortener) ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Аутентифицируем пользователя
-		userID := authenticateUser(w, r, cookie)
+		userID := authenticateUser(w, r, s.CookieSecret)
 
 		if r.Header.Get("Content-Type") != "application/json" {
 			http.Error(w, "", http.StatusBadRequest)
@@ -83,8 +86,8 @@ func ShortenJSONHandler(baseURL, filePath string, cookie []byte) func(w http.Res
 		shortID := app.GenerateShortID(8)
 		newUUID := uuid.New().String()
 
-		if useDB {
-			savedShortID, err := dbstorage.SaveURLWithConflictCheck(r.Context(), newUUID, shortID, url, userID)
+		if s.UseDB {
+			savedShortID, err := s.DBStorage.SaveURLWithConflictCheck(r.Context(), newUUID, shortID, url, userID)
 			if err != nil {
 				if errors.Is(err, db.ErrURLConflict) {
 					// URL уже существует - возвращаем конфликт
@@ -137,9 +140,9 @@ func ShortenJSONHandler(baseURL, filePath string, cookie []byte) func(w http.Res
 }
 
 // ShortenHandler - обработчик POST-запросов.
-func ShortenHandler(baseURL string, cookie []byte) func(w http.ResponseWriter, r *http.Request) {
+func (s *URLShortener) ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := authenticateUser(w, r, cookie)
+		userID := authenticateUser(w, r, s.CookieSecret)
 		if r.Header.Get("Content-Type") != "text/plain" {
 			http.Error(w, "", http.StatusBadRequest)
 			return
@@ -162,8 +165,8 @@ func ShortenHandler(baseURL string, cookie []byte) func(w http.ResponseWriter, r
 		shortID := app.GenerateShortID(8)
 		newUUID := uuid.New().String()
 
-		if useDB {
-			savedShortID, err := dbstorage.SaveURLWithConflictCheck(r.Context(), newUUID, shortID, url, userID)
+		if s.UseDB {
+			savedShortID, err := s.DBStorage.SaveURLWithConflictCheck(r.Context(), newUUID, shortID, url, userID)
 			if err != nil {
 				if errors.Is(err, db.ErrURLConflict) {
 					// URL уже существует - возвращаем конфликт
@@ -209,16 +212,16 @@ func ShortenHandler(baseURL string, cookie []byte) func(w http.ResponseWriter, r
 }
 
 // GetUserURLsHandler - обработчик для получения всех URL пользователя
-func GetUserURLsHandler(baseURL string, cookie []byte) func(w http.ResponseWriter, r *http.Request) {
+func (s *URLShortener) GetUserURLsHandler(baseURL string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Проверяем аутентификацию
-		userID := authenticateUser(w, r, cookie)
+		userID := authenticateUser(w, r, s.CookieSecret)
 
 		var userURLs []UserURLResponse
 
-		if useDB {
+		if s.UseDB {
 			// Получаем URL пользователя из базы данных
-			urls, err := dbstorage.GetUserURLs(r.Context(), userID)
+			urls, err := s.DBStorage.GetUserURLs(r.Context(), userID)
 			if err != nil {
 				log.Printf("Error getting user URLs from database: %v", err)
 				http.Error(w, "Database error", http.StatusInternalServerError)
@@ -289,7 +292,7 @@ func GetUserURLsHandler(baseURL string, cookie []byte) func(w http.ResponseWrite
 }
 
 // RedirectHandler - обработчик GET-запросов.
-func RedirectHandler(w http.ResponseWriter, r *http.Request) {
+func (s *URLShortener) RedirectHandler(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/")
 	if id == "" {
 		http.Error(w, "", http.StatusBadRequest)
@@ -298,8 +301,8 @@ func RedirectHandler(w http.ResponseWriter, r *http.Request) {
 	var exists bool
 	var url string
 	var err error
-	if useDB {
-		url, err = dbstorage.GetURL(r.Context(), id)
+	if s.UseDB {
+		url, err = s.DBStorage.GetURL(r.Context(), id)
 		if err != nil {
 			if err.Error() == "URL was deleted" {
 				http.Error(w, "URL was deleted", http.StatusGone)
@@ -320,12 +323,12 @@ func RedirectHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // PingHandler - обработчик для проверки соединения с БД.
-func PingHandler(w http.ResponseWriter, r *http.Request) {
-	if !useDB || dbstorage == nil {
+func (s *URLShortener) PingHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.UseDB || s.DBStorage == nil {
 		http.Error(w, "Database not configurated", http.StatusInternalServerError)
 		return
 	}
-	if err := dbstorage.Ping(); err != nil {
+	if err := s.DBStorage.Ping(); err != nil {
 		http.Error(w, "Database connection failed", http.StatusInternalServerError)
 	}
 	w.WriteHeader(http.StatusOK)
@@ -333,9 +336,9 @@ func PingHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // BatchShortenHandler - обработчик для пакетного сокращения URL
-func BatchShortenHandler(baseURL, filePath string, cookie []byte) func(w http.ResponseWriter, r *http.Request) {
+func (s *URLShortener) BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := authenticateUser(w, r, cookie)
+		userID := authenticateUser(w, r, s.CookieSecret)
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -381,13 +384,13 @@ func BatchShortenHandler(baseURL, filePath string, cookie []byte) func(w http.Re
 		// Обработка для базы данных
 		var batchResponses []BatchResponseItem
 
-		if useDB {
+		if s.UseDB {
 			// Используем отдельные вызовы SaveURLWithConflictCheck для каждого URL
 			for _, item := range batchRequests {
 				shortID := app.GenerateShortID(8)
 				newUUID := uuid.New().String()
 
-				savedShortID, err := dbstorage.SaveURLWithConflictCheck(r.Context(), newUUID, shortID, item.OriginalURL, userID)
+				savedShortID, err := s.DBStorage.SaveURLWithConflictCheck(r.Context(), newUUID, shortID, item.OriginalURL, userID)
 				if err != nil {
 					if errors.Is(err, db.ErrURLConflict) {
 						// URL уже существует - используем существующий
@@ -463,10 +466,10 @@ func BatchShortenHandler(baseURL, filePath string, cookie []byte) func(w http.Re
 }
 
 // DeleteURLsHandler - улучшенный обработчик для удаления URL с fan-in паттерном
-func DeleteURLsHandler(cookie []byte) func(w http.ResponseWriter, r *http.Request) {
+func (s *URLShortener) DeleteURLsHandler() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Проверяем аутентификацию
-		userID := authenticateUser(w, r, cookie)
+		userID := authenticateUser(w, r, s.CookieSecret)
 
 		if r.Header.Get("Content-Type") != "application/json" {
 			http.Error(w, "Content-Type must be application/json", http.StatusBadRequest)
@@ -497,12 +500,12 @@ func DeleteURLsHandler(cookie []byte) func(w http.ResponseWriter, r *http.Reques
 		log.Printf("Received delete request for %d URLs from user %s", len(shortIDs), userID)
 
 		// Для базы данных - используем улучшенный метод с fan-in паттерном
-		if useDB {
+		if s.UseDB {
 			go func(ids []string, uid string) {
 				start := time.Now()
 				log.Printf("Starting async deletion of %d URLs for user %s", len(ids), uid)
 
-				if err := deleteURLsBatch(ids, uid); err != nil {
+				if err := s.deleteURLsBatch(ids, uid); err != nil {
 					log.Printf("Error deleting URLs in batch: %v", err)
 				} else {
 					duration := time.Since(start)
@@ -516,7 +519,7 @@ func DeleteURLsHandler(cookie []byte) func(w http.ResponseWriter, r *http.Reques
 				start := time.Now()
 				log.Printf("Starting async deletion of %d URLs for user %s (file/memory)", len(ids), uid)
 
-				if err := deleteURLsBatch(ids, uid); err != nil {
+				if err := s.deleteURLsBatch(ids, uid); err != nil {
 					log.Printf("Error deleting URLs in batch: %v", err)
 				} else {
 					duration := time.Since(start)
@@ -533,7 +536,7 @@ func DeleteURLsHandler(cookie []byte) func(w http.ResponseWriter, r *http.Reques
 }
 
 // deleteURLsBatch - удаляет URL в батче с использованием fan-in паттерна
-func deleteURLsBatch(shortIDs []string, userID string) error {
+func (s *URLShortener) deleteURLsBatch(shortIDs []string, userID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -563,7 +566,7 @@ func deleteURLsBatch(shortIDs []string, userID string) error {
 			defer wg.Done()
 			for batch := range batches {
 				log.Printf("Worker %d processing batch of %d URLs", workerID, len(batch))
-				err := processBatch(ctx, batch, userID)
+				err := s.processBatch(ctx, batch, userID)
 				results <- err
 				if err != nil {
 					log.Printf("Worker %d error: %v", workerID, err)
@@ -598,9 +601,9 @@ func deleteURLsBatch(shortIDs []string, userID string) error {
 }
 
 // processBatch - обрабатывает один батч URL для удаления
-func processBatch(ctx context.Context, shortIDs []string, userID string) error {
-	if useDB {
-		return dbstorage.DeleteURLs(ctx, shortIDs, userID)
+func (s *URLShortener) processBatch(ctx context.Context, shortIDs []string, userID string) error {
+	if s.UseDB {
+		return s.DBStorage.DeleteURLs(ctx, shortIDs, userID)
 	}
 
 	// Для файлового хранилища и памяти
