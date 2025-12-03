@@ -16,6 +16,7 @@ import (
 func main() {
 	cfg := config.NewConfig()
 	r := chi.NewRouter()
+	router.InitCookieManager(cfg)
 
 	if cfg.DatabaseDSN == "" {
 		router.SetStorageFile(cfg.FileStoragePath)
@@ -30,7 +31,6 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	router.InitCookieManager(cfg)
 
 	r.Use(handler.GzipMiddleware)
 
