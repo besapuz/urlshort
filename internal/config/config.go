@@ -20,7 +20,7 @@ type Config struct {
 func NewConfig() *Config {
 	cfg := &Config{}
 
-	flag.StringVar(&cfg.Address, "a", "localhost:8080", "HTTP server address")
+	// flag.StringVar(&cfg.Address, "a", "localhost:8080", "HTTP server address")
 	flag.StringVar(&cfg.BaseURL, "b", "", "Base URL for shortened links")
 	flag.StringVar(&cfg.LogLevel, "l", "", "log level")
 	flag.StringVar(&cfg.FileStoragePath, "f", "", "path to file storage")
