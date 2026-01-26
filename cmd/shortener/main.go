@@ -2,10 +2,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
+	"github.com/besapuz/urlshort/internal/audit"
 	"github.com/besapuz/urlshort/internal/config"
 	"github.com/besapuz/urlshort/internal/handler"
 	"github.com/besapuz/urlshort/internal/logger"
@@ -14,9 +19,29 @@ import (
 )
 
 func main() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Обработка сигналов завершения
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		cancel()
+	}()
+
 	cfg := config.NewConfig()
 	r := chi.NewRouter()
 
+	// Инициализация аудита
+	auditCfg := &audit.Config{
+		AuditFile: cfg.AuditFile,
+		AuditURL:  cfg.AuditURL,
+	}
+	if err := audit.Init(ctx, auditCfg); err != nil {
+		fmt.Fprintf(os.Stderr, "Ошибка инициализации аудита: %v\n", err)
+		os.Exit(1)
+	}
 	shortener := &router.URLShortener{
 		BaseURL:         cfg.BaseURL,
 		FileStoragePath: cfg.FileStoragePath,
@@ -58,10 +83,25 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Printf("Server started on http://%s\n", cfg.Address)
-	err := http.ListenAndServe(cfg.Address, logger.RequestLogger(r))
+	server := &http.Server{
+		Addr:    cfg.Address,
+		Handler: logger.RequestLogger(r),
+	}
 
-	if err != nil {
-		panic(err)
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			panic(err)
+		}
+	}()
+
+	<-ctx.Done()
+	fmt.Println("Shutting down server...")
+
+	// Graceful shutdown
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		fmt.Printf("Server shutdown error: %v\n", err)
 	}
 }

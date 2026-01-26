@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/besapuz/urlshort/internal/app"
+	"github.com/besapuz/urlshort/internal/audit"
 	"github.com/besapuz/urlshort/internal/config/db"
 	"github.com/google/uuid"
 )
@@ -85,6 +86,13 @@ func (s *URLShortener) ShortenJSONHandler(baseURL, filePath string) func(w http.
 
 		shortID := app.GenerateShortID(8)
 		newUUID := uuid.New().String()
+
+		defer func() {
+			// Аудит успешного создания
+			if r.Method == http.MethodPost && err == nil && url != "" {
+				audit.LogEvent(audit.ActionShorten, userID, url)
+			}
+		}()
 
 		if s.UseDB {
 			savedShortID, err := s.DBStorage.SaveURLWithConflictCheck(r.Context(), newUUID, shortID, url, userID)
@@ -164,6 +172,13 @@ func (s *URLShortener) ShortenHandler(baseURL string) func(w http.ResponseWriter
 
 		shortID := app.GenerateShortID(8)
 		newUUID := uuid.New().String()
+
+		defer func() {
+			// Аудит успешного создания
+			if r.Method == http.MethodPost && err == nil {
+				audit.LogEvent(audit.ActionShorten, userID, url)
+			}
+		}()
 
 		if s.UseDB {
 			savedShortID, err := s.DBStorage.SaveURLWithConflictCheck(r.Context(), newUUID, shortID, url, userID)
@@ -301,6 +316,14 @@ func (s *URLShortener) RedirectHandler(w http.ResponseWriter, r *http.Request) {
 	var exists bool
 	var url string
 	var err error
+	// Получаем userID из куки
+	userID := authenticateUser(w, r, s.CookieSecret)
+	defer func() {
+		// Аудит успешного перехода по ссылке
+		if r.Method == http.MethodGet && (exists || url != "") {
+			audit.LogEvent(audit.ActionFollow, userID, url)
+		}
+	}()
 	if s.UseDB {
 		url, err = s.DBStorage.GetURL(r.Context(), id)
 		if err != nil {

@@ -15,6 +15,8 @@ type Config struct {
 	FileStoragePath string
 	DatabaseDSN     string
 	CookieSecret    []byte
+	AuditFile       string
+	AuditURL        string
 }
 
 func NewConfig() *Config {
@@ -25,6 +27,8 @@ func NewConfig() *Config {
 	flag.StringVar(&cfg.LogLevel, "l", "", "log level")
 	flag.StringVar(&cfg.FileStoragePath, "f", "", "path to file storage")
 	flag.StringVar(&cfg.DatabaseDSN, "d", "", "database connect")
+	flag.StringVar(&cfg.AuditFile, "--audit-file", "", "audit file")
+	flag.StringVar(&cfg.AuditURL, "--audit-url", "", "audil url")
 
 	flag.Parse()
 
@@ -42,6 +46,12 @@ func NewConfig() *Config {
 	}
 	if envDatabaseDSN := os.Getenv("DATABASE_DSN"); envDatabaseDSN != "" {
 		cfg.DatabaseDSN = envDatabaseDSN
+	}
+	if envAuditFile := os.Getenv("AUDIT_FILE"); envAuditFile != "" {
+		cfg.AuditFile = envAuditFile
+	}
+	if envAuditUrl := os.Getenv("AUDIT_URL"); envAuditUrl != "" {
+		cfg.AuditURL = envAuditUrl
 	}
 	if envCookieSecret := os.Getenv("COOKIE_SECRET"); envCookieSecret != "" {
 		cfg.CookieSecret = []byte(envCookieSecret)
