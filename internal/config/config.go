@@ -27,8 +27,8 @@ func NewConfig() *Config {
 	flag.StringVar(&cfg.LogLevel, "l", "", "log level")
 	flag.StringVar(&cfg.FileStoragePath, "f", "", "path to file storage")
 	flag.StringVar(&cfg.DatabaseDSN, "d", "", "database connect")
-	flag.StringVar(&cfg.AuditFile, "--audit-file", "", "audit file")
-	flag.StringVar(&cfg.AuditURL, "--audit-url", "", "audil url")
+	flag.StringVar(&cfg.AuditFile, "audit-file", "", "audit file")
+	flag.StringVar(&cfg.AuditURL, "audit-url", "", "audit url")
 
 	flag.Parse()
 
@@ -50,8 +50,8 @@ func NewConfig() *Config {
 	if envAuditFile := os.Getenv("AUDIT_FILE"); envAuditFile != "" {
 		cfg.AuditFile = envAuditFile
 	}
-	if envAuditUrl := os.Getenv("AUDIT_URL"); envAuditUrl != "" {
-		cfg.AuditURL = envAuditUrl
+	if envAuditURL := os.Getenv("AUDIT_URL"); envAuditURL != "" {
+		cfg.AuditURL = envAuditURL
 	}
 	if envCookieSecret := os.Getenv("COOKIE_SECRET"); envCookieSecret != "" {
 		cfg.CookieSecret = []byte(envCookieSecret)

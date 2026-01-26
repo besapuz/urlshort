@@ -313,17 +313,21 @@ func (s *URLShortener) RedirectHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
+
+	// Получаем userID из куки
+	userID := authenticateUser(w, r, s.CookieSecret)
+
 	var exists bool
 	var url string
 	var err error
-	// Получаем userID из куки
-	userID := authenticateUser(w, r, s.CookieSecret)
+
 	defer func() {
 		// Аудит успешного перехода по ссылке
 		if r.Method == http.MethodGet && (exists || url != "") {
 			audit.LogEvent(audit.ActionFollow, userID, url)
 		}
 	}()
+
 	if s.UseDB {
 		url, err = s.DBStorage.GetURL(r.Context(), id)
 		if err != nil {

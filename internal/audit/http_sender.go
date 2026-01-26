@@ -62,14 +62,12 @@ func (hs *HTTPSender) sendToServer(event Event) {
 
 	resp, err := hs.client.Do(req)
 	if err != nil {
-		// Логируем ошибку сети
 		return
 	}
 	defer resp.Body.Close()
 
-	// Проверяем статус ответа
+	// Можно проверить статус ответа
 	if resp.StatusCode >= 400 {
-		// Логируем ошибку сервера
 	}
 }
 
