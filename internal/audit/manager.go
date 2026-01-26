@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"log"
 	"sync"
 )
 
@@ -30,7 +31,7 @@ func (m *Manager) NotifyAll(event Event) {
 	for _, observer := range observers {
 		go func(o Observer) {
 			if err := o.Notify(event); err != nil {
-				// Логируем ошибку, но не блокируем основной поток
+				log.Printf("Ошибка уведомления: %v", err)
 			}
 		}(observer)
 	}

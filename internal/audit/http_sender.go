@@ -3,6 +3,7 @@ package audit
 import (
 	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 )
@@ -51,11 +52,13 @@ func (hs *HTTPSender) processEvents() {
 func (hs *HTTPSender) sendToServer(event Event) {
 	data, err := json.Marshal(event)
 	if err != nil {
+		log.Printf("Ошибка инициализации: %v", err)
 		return
 	}
 
 	req, err := http.NewRequest("POST", hs.url, bytes.NewReader(data))
 	if err != nil {
+		log.Printf("Ошибка запроса: %v", err)
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -68,6 +71,7 @@ func (hs *HTTPSender) sendToServer(event Event) {
 
 	// Можно проверить статус ответа
 	if resp.StatusCode >= 400 {
+		log.Printf("Ошибка статускода: %v", err)
 	}
 }
 
