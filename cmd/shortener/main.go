@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -19,6 +20,13 @@ import (
 )
 
 func main() {
+	// Запускаем pprof на отдельном порту
+	go func() {
+		fmt.Println("Starting pprof server on :6060")
+		if err := http.ListenAndServe("localhost:6060", nil); err != nil {
+			fmt.Printf("pprof server error: %v\n", err)
+		}
+	}()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -28,6 +36,20 @@ func main() {
 	go func() {
 		<-sigChan
 		cancel()
+	}()
+	go func() {
+		for {
+			sig := <-sigChan
+			switch sig {
+			case syscall.SIGUSR1:
+				// Дамп памяти по сигналу SIGUSR1
+				fmt.Println("Received SIGUSR1, dumping memory stats...")
+				dumpMemoryStats()
+			default:
+				fmt.Printf("Received signal %v, shutting down...\n", sig)
+				cancel()
+			}
+		}
 	}()
 
 	cfg := config.NewConfig()
@@ -104,4 +126,25 @@ func main() {
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		fmt.Printf("Server shutdown error: %v\n", err)
 	}
+}
+
+func dumpMemoryStats() {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	fmt.Printf("=== Memory Stats ===\n")
+	fmt.Printf("Alloc = %v MiB\n", bToMb(m.Alloc))
+	fmt.Printf("TotalAlloc = %v MiB\n", bToMb(m.TotalAlloc))
+	fmt.Printf("Sys = %v MiB\n", bToMb(m.Sys))
+	fmt.Printf("HeapAlloc = %v MiB\n", bToMb(m.HeapAlloc))
+	fmt.Printf("HeapSys = %v MiB\n", bToMb(m.HeapSys))
+	fmt.Printf("HeapIdle = %v MiB\n", bToMb(m.HeapIdle))
+	fmt.Printf("HeapInuse = %v MiB\n", bToMb(m.HeapInuse))
+	fmt.Printf("NumGC = %v\n", m.NumGC)
+	fmt.Printf("GCCPUFraction = %v\n", m.GCCPUFraction)
+	fmt.Printf("=== End Memory Stats ===\n")
+}
+
+func bToMb(b uint64) uint64 {
+	return b / 1024 / 1024
 }
