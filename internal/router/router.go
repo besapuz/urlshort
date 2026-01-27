@@ -66,6 +66,7 @@ func (s *URLShortener) ShortenJSONHandler(baseURL, filePath string) func(w http.
 			http.Error(w, "", http.StatusBadRequest)
 			return
 		}
+
 		body, err := io.ReadAll(r.Body)
 		if err != nil || len(body) == 0 {
 			http.Error(w, "", http.StatusBadRequest)
