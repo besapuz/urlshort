@@ -1,3 +1,5 @@
+// Package audit предоставляет систему аудита для логирования событий в URL shortener сервисе.
+// Система поддерживает несколько способов логирования: файловое хранилище и HTTP-отправку.
 package audit
 
 import (
@@ -6,16 +8,25 @@ import (
 )
 
 var (
+	// defaultManager - глобальный менеджер аудита, используемый пакетом.
 	defaultManager *Manager
 )
 
-// Config - конфигурация аудита
+// Config содержит конфигурацию системы аудита.
 type Config struct {
+	// AuditFile - путь к файлу для записи аудит-логов.
+	// Если пустая строка, файловое логирование отключено.
 	AuditFile string
-	AuditURL  string
+
+	// AuditURL - URL для отправки аудит-событий по HTTP.
+	// Если пустая строка, HTTP-логирование отключено.
+	AuditURL string
 }
 
-// Init инициализирует систему аудита
+// Init инициализирует систему аудита с заданной конфигурацией.
+// Функция должна быть вызвана один раз при запуске приложения.
+// Принимает контекст для graceful shutdown.
+// Возвращает ошибку в случае проблем с инициализацией.
 func Init(ctx context.Context, cfg *Config) error {
 	defaultManager = NewManager()
 
@@ -47,7 +58,9 @@ func Init(ctx context.Context, cfg *Config) error {
 	return nil
 }
 
-// LogEvent логирует событие аудита
+// LogEvent логирует событие аудита в систему.
+// Функция потокобезопасна и может вызываться из нескольких горутин.
+// Если система аудита не инициализирована, событие игнорируется.
 func LogEvent(action Action, userID, url string) {
 	if defaultManager == nil {
 		return
