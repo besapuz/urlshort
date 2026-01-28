@@ -46,6 +46,32 @@ type UserURLResponse struct {
 	OriginalURL string `json:"original_url"`
 }
 
+// NewURLShortener создает новый инициализированный URLShortener
+func NewURLShortener(baseURL string, cookieSecret []byte) *URLShortener {
+	return &URLShortener{
+		BaseURL:       baseURL,
+		CookieSecret:  cookieSecret,
+		MemoryStorage: NewStorages(),
+		UseDB:         false,
+	}
+}
+
+// NewURLShortenerWithDB создает URLShortener с поддержкой БД
+func NewURLShortenerWithDB(baseURL string, cookieSecret []byte, dsn string) (*URLShortener, error) {
+	storage, err := db.NewDBStorage(dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	return &URLShortener{
+		BaseURL:       baseURL,
+		CookieSecret:  cookieSecret,
+		MemoryStorage: NewStorages(),
+		DBStorage:     storage,
+		UseDB:         true,
+	}, nil
+}
+
 // InitDBStorage - инициализация хранилища в базе данных
 func (s *URLShortener) InitDBStorage(dsn string) error {
 	storage, err := db.NewDBStorage(dsn)

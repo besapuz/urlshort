@@ -60,11 +60,23 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Ошибка инициализации аудита: %v\n", err)
 		os.Exit(1)
 	}
-	shortener := &router.URLShortener{
-		BaseURL:         cfg.BaseURL,
-		FileStoragePath: cfg.FileStoragePath,
-		CookieSecret:    cfg.GetCookieSecret(),
-		MemoryStorage:   router.NewStorages(),
+	var shortener *router.URLShortener
+	if cfg.DatabaseDSN != "" {
+		// Используем конструктор с БД
+		shortener, err = router.NewURLShortenerWithDB(cfg.BaseURL, cfg.GetCookieSecret(), cfg.DatabaseDSN)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Ошибка инициализации базы данных: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		// Используем конструктор без БД
+		shortener = router.NewURLShortener(cfg.BaseURL, cfg.GetCookieSecret())
+		shortener.FileStoragePath = cfg.FileStoragePath
+		shortener.MemoryStorage.SetStorageFile(cfg.FileStoragePath)
+		if err := shortener.MemoryStorage.LoadFromFile(cfg.FileStoragePath); err != nil {
+			fmt.Fprintf(os.Stderr, "Ошибка загрузки файла: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	if cfg.DatabaseDSN == "" {

@@ -25,14 +25,7 @@ func TestRedirectHandler(t *testing.T) {
 			name: "Пустой идентификатор",
 			path: "/",
 			setup: func(s *URLShortener) {
-				if s.MemoryStorage == nil {
-					s.MemoryStorage = &Storages{
-						urlMap:      make(map[string]string),
-						userURLsMap: make(map[string][]string),
-					}
-				} else {
-					s.MemoryStorage.urlMap = make(map[string]string)
-				}
+				s.MemoryStorage.urlMap = make(map[string]string)
 			},
 			expectedStatus: http.StatusBadRequest,
 			expectedHeader: "",
@@ -41,14 +34,7 @@ func TestRedirectHandler(t *testing.T) {
 			name: "Валидный идентификатор",
 			path: "/example",
 			setup: func(s *URLShortener) {
-				if s.MemoryStorage == nil {
-					s.MemoryStorage = &Storages{
-						urlMap:      map[string]string{"example": "https://example.com"},
-						userURLsMap: make(map[string][]string),
-					}
-				} else {
-					s.MemoryStorage.urlMap = map[string]string{"example": "https://example.com"}
-				}
+				s.MemoryStorage.urlMap = map[string]string{"example": "https://example.com"}
 			},
 			expectedStatus: http.StatusTemporaryRedirect,
 			expectedHeader: "https://example.com",
@@ -57,14 +43,7 @@ func TestRedirectHandler(t *testing.T) {
 			name: "Невалидный идентификатор",
 			path: "/invalid",
 			setup: func(s *URLShortener) {
-				if s.MemoryStorage == nil {
-					s.MemoryStorage = &Storages{
-						urlMap:      map[string]string{"valid": "https://valid.com"},
-						userURLsMap: make(map[string][]string),
-					}
-				} else {
-					s.MemoryStorage.urlMap = map[string]string{"valid": "https://valid.com"}
-				}
+				s.MemoryStorage.urlMap = map[string]string{"valid": "https://valid.com"}
 			},
 			expectedStatus: http.StatusBadRequest,
 			expectedHeader: "",
@@ -73,12 +52,8 @@ func TestRedirectHandler(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			shortener := &URLShortener{
-				MemoryStorage: &Storages{
-					urlMap:      make(map[string]string),
-					userURLsMap: make(map[string][]string),
-				},
-			}
+			// ИСПОЛЬЗУЕМ КОНСТРУКТОР
+			shortener := NewURLShortener("http://localhost:8080", []byte("test-secret"))
 			tt.setup(shortener)
 
 			req := httptest.NewRequest("GET", tt.path, nil)
@@ -135,13 +110,8 @@ func TestShortenHandler(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			shortener := &URLShortener{
-				MemoryStorage: &Storages{
-					urlMap:      make(map[string]string),
-					userURLsMap: make(map[string][]string),
-				},
-				UseDB: false,
-			}
+			// ИСПОЛЬЗУЕМ КОНСТРУКТОР
+			shortener := NewURLShortener("http://localhost:8080", []byte("test-secret"))
 
 			req := httptest.NewRequest("POST", "/", strings.NewReader(tt.body))
 			req.Header.Set("Content-Type", tt.contentType)
@@ -203,13 +173,8 @@ func TestShortenJSONHandler(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			shortener := &URLShortener{
-				MemoryStorage: &Storages{
-					urlMap:      make(map[string]string),
-					userURLsMap: make(map[string][]string),
-				},
-				UseDB: false,
-			}
+			// ИСПОЛЬЗУЕМ КОНСТРУКТОР
+			shortener := NewURLShortener("http://localhost:8080", []byte("test-secret"))
 
 			req := httptest.NewRequest("POST", "/api/shorten", strings.NewReader(tt.body))
 			req.Header.Set("Content-Type", tt.contentType)

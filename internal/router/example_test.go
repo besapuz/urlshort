@@ -18,20 +18,18 @@ func ExampleURLShortener_BatchShortenHandler() {
 		CookieSecret: []byte("test-secret"),
 	}
 
-	shortener := &URLShortener{
-		BaseURL:      cfg.BaseURL,
-		CookieSecret: cfg.GetCookieSecret(),
-	}
+	// ИСПОЛЬЗУЕМ КОНСТРУКТОР
+	shortener := NewURLShortener(cfg.BaseURL, cfg.GetCookieSecret())
 
 	handler := shortener.BatchShortenHandler(cfg.BaseURL, "")
 	ts := httptest.NewServer(http.HandlerFunc(handler))
 	defer ts.Close()
 
 	// Подготавливаем пакетный запрос
-	batchRequest := []map[string]string{
-		{"correlation_id": "1", "original_url": "https://example.com/first"},
-		{"correlation_id": "2", "original_url": "https://example.com/second"},
-		{"correlation_id": "3", "original_url": "https://example.com/third"},
+	batchRequest := []BatchRequestItem{
+		{CorrelationID: "1", OriginalURL: "https://example.com/first"},
+		{CorrelationID: "2", OriginalURL: "https://example.com/second"},
+		{CorrelationID: "3", OriginalURL: "https://example.com/third"},
 	}
 
 	jsonBody, _ := json.Marshal(batchRequest)
@@ -48,12 +46,12 @@ func ExampleURLShortener_BatchShortenHandler() {
 	fmt.Printf("Status: %d\n", resp.StatusCode)
 
 	// Парсим ответ
-	var result []map[string]string
+	var result []BatchResponseItem
 	json.Unmarshal(body, &result)
 
 	for _, item := range result {
 		fmt.Printf("Correlation ID: %s -> Short URL starts with: http://localhost:8080/\n",
-			item["correlation_id"])
+			item.CorrelationID)
 	}
 
 	// Output:
@@ -70,10 +68,8 @@ func ExampleURLShortener_DeleteURLsHandler() {
 		CookieSecret: []byte("test-secret"),
 	}
 
-	shortener := &URLShortener{
-		BaseURL:      cfg.BaseURL,
-		CookieSecret: cfg.GetCookieSecret(),
-	}
+	// ИСПОЛЬЗУЕМ КОНСТРУКТОР
+	shortener := NewURLShortener(cfg.BaseURL, cfg.GetCookieSecret())
 
 	// Создаем тестовый сервер
 	handler := shortener.DeleteURLsHandler()
@@ -91,7 +87,7 @@ func ExampleURLShortener_DeleteURLsHandler() {
 	// Устанавливаем тестовую куку
 	req.AddCookie(&http.Cookie{
 		Name:  "user_id",
-		Value: "test-user.123",
+		Value: signUserID("test-user", cfg.GetCookieSecret()),
 	})
 
 	client := &http.Client{}
