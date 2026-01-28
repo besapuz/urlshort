@@ -21,14 +21,14 @@ func BenchmarkAuditLogEvent(b *testing.B) {
 	cfg := &Config{
 		AuditFile: tmpFile.Name(),
 	}
-
-	if err := Init(ctx, cfg); err != nil {
+	defaultManager, err := Init(ctx, cfg)
+	if err != nil {
 		b.Fatal(err)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		LogEvent(ActionShorten, "test-user-123", "https://example.com/long-url")
+		LogEvent(defaultManager, ActionShorten, "test-user-123", "https://example.com/long-url")
 	}
 }
 

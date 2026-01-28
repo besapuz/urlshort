@@ -8,62 +8,48 @@ import (
 )
 
 func TestSetAndGetStorageFile(t *testing.T) {
-	// Сохраняем оригинальное значение
-	originalStorageFile := storageFile
-
-	// Восстанавливаем после теста
-	defer func() {
-		storageFile = originalStorageFile
-	}()
+	storage := &Storages{
+		urlMap:      make(map[string]string),
+		userURLsMap: make(map[string][]string),
+	}
 
 	testPath := "/test/path/storage.json"
-	SetStorageFile(testPath)
+	storage.SetStorageFile(testPath)
 
-	result := GetStorageFilePath()
+	result := storage.GetStorageFilePath()
 	if result != testPath {
 		t.Errorf("Expected storage path %s, got %s", testPath, result)
 	}
 }
 
 func TestLoadFromFile_FileNotExists(t *testing.T) {
-	// Сохраняем оригинальные данные
-	originalURLMap := urlMap
-	originalMappings := URLMappings
-
-	// Восстанавливаем после теста
-	defer func() {
-		urlMap = originalURLMap
-		URLMappings = originalMappings
-	}()
+	storage := &Storages{
+		urlMap:      make(map[string]string),
+		userURLsMap: make(map[string][]string),
+	}
 
 	nonExistentFile := "/tmp/nonexistent_file_12345.json"
-	err := LoadFromFile(nonExistentFile)
+	err := storage.LoadFromFile(nonExistentFile)
 
 	if err != nil {
 		t.Errorf("Expected no error for non-existent file, got %v", err)
 	}
 
-	if len(urlMap) != 0 {
-		t.Errorf("Expected empty urlMap, got %d elements", len(urlMap))
+	if len(storage.urlMap) != 0 {
+		t.Errorf("Expected empty urlMap, got %d elements", len(storage.urlMap))
 	}
 
-	if len(URLMappings) != 0 {
-		t.Errorf("Expected empty URLMappings, got %d elements", len(URLMappings))
+	if len(storage.URLMappings) != 0 {
+		t.Errorf("Expected empty URLMappings, got %d elements", len(storage.URLMappings))
 	}
 }
 
 func TestLoadFromFile_EmptyFile(t *testing.T) {
-	// Сохраняем оригинальные данные
-	originalURLMap := urlMap
-	originalMappings := URLMappings
+	storage := &Storages{
+		urlMap:      make(map[string]string),
+		userURLsMap: make(map[string][]string),
+	}
 
-	// Восстанавливаем после теста
-	defer func() {
-		urlMap = originalURLMap
-		URLMappings = originalMappings
-	}()
-
-	// Создаем временный пустой файл
 	tmpDir := t.TempDir()
 	emptyFile := filepath.Join(tmpDir, "empty.json")
 
@@ -73,32 +59,26 @@ func TestLoadFromFile_EmptyFile(t *testing.T) {
 	}
 	file.Close()
 
-	err = LoadFromFile(emptyFile)
+	err = storage.LoadFromFile(emptyFile)
 	if err != nil {
 		t.Errorf("Expected no error for empty file, got %v", err)
 	}
 
-	if len(urlMap) != 0 {
-		t.Errorf("Expected empty urlMap, got %d elements", len(urlMap))
+	if len(storage.urlMap) != 0 {
+		t.Errorf("Expected empty urlMap, got %d elements", len(storage.urlMap))
 	}
 
-	if len(URLMappings) != 0 {
-		t.Errorf("Expected empty URLMappings, got %d elements", len(URLMappings))
+	if len(storage.URLMappings) != 0 {
+		t.Errorf("Expected empty URLMappings, got %d elements", len(storage.URLMappings))
 	}
 }
 
 func TestLoadFromFile_ValidData(t *testing.T) {
-	// Сохраняем оригинальные данные
-	originalURLMap := urlMap
-	originalMappings := URLMappings
+	storage := &Storages{
+		urlMap:      make(map[string]string),
+		userURLsMap: make(map[string][]string),
+	}
 
-	// Восстанавливаем после теста
-	defer func() {
-		urlMap = originalURLMap
-		URLMappings = originalMappings
-	}()
-
-	// Создаем временный файл с валидными данными
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test_data.json")
 
@@ -129,42 +109,34 @@ func TestLoadFromFile_ValidData(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	err = LoadFromFile(testFile)
+	err = storage.LoadFromFile(testFile)
 	if err != nil {
 		t.Errorf("Expected no error for valid file, got %v", err)
 	}
 
-	// Проверяем синхронизацию urlMap
-	if len(urlMap) != 2 {
-		t.Errorf("Expected urlMap with 2 elements, got %d", len(urlMap))
+	if len(storage.urlMap) != 2 {
+		t.Errorf("Expected urlMap with 2 elements, got %d", len(storage.urlMap))
 	}
 
-	if urlMap["abc123"] != "https://example.com" {
-		t.Errorf("Expected urlMap['abc123'] = 'https://example.com', got '%s'", urlMap["abc123"])
+	if storage.urlMap["abc123"] != "https://example.com" {
+		t.Errorf("Expected urlMap['abc123'] = 'https://example.com', got '%s'", storage.urlMap["abc123"])
 	}
 
-	if urlMap["def456"] != "https://google.com" {
-		t.Errorf("Expected urlMap['def456'] = 'https://google.com', got '%s'", urlMap["def456"])
+	if storage.urlMap["def456"] != "https://google.com" {
+		t.Errorf("Expected urlMap['def456'] = 'https://google.com', got '%s'", storage.urlMap["def456"])
 	}
 
-	// Проверяем URLMappings
-	if len(URLMappings) != 2 {
-		t.Errorf("Expected URLMappings with 2 elements, got %d", len(URLMappings))
+	if len(storage.URLMappings) != 2 {
+		t.Errorf("Expected URLMappings with 2 elements, got %d", len(storage.URLMappings))
 	}
 }
 
 func TestLoadFromFile_InvalidJSON(t *testing.T) {
-	// Сохраняем оригинальные данные
-	originalURLMap := urlMap
-	originalMappings := URLMappings
+	storage := &Storages{
+		urlMap:      make(map[string]string),
+		userURLsMap: make(map[string][]string),
+	}
 
-	// Восстанавливаем после теста
-	defer func() {
-		urlMap = originalURLMap
-		URLMappings = originalMappings
-	}()
-
-	// Создаем временный файл с невалидным JSON
 	tmpDir := t.TempDir()
 	invalidFile := filepath.Join(tmpDir, "invalid.json")
 
@@ -173,25 +145,19 @@ func TestLoadFromFile_InvalidJSON(t *testing.T) {
 		t.Fatalf("Failed to write invalid JSON file: %v", err)
 	}
 
-	err = LoadFromFile(invalidFile)
+	err = storage.LoadFromFile(invalidFile)
 	if err == nil {
 		t.Error("Expected error for invalid JSON, got nil")
 	}
 }
 
 func TestSaveToFile(t *testing.T) {
-	// Сохраняем оригинальные данные
-	originalURLMap := urlMap
-	originalMappings := URLMappings
+	storage := &Storages{
+		urlMap:      make(map[string]string),
+		userURLsMap: make(map[string][]string),
+	}
 
-	// Восстанавливаем после теста
-	defer func() {
-		urlMap = originalURLMap
-		URLMappings = originalMappings
-	}()
-
-	// Устанавливаем тестовые данные
-	URLMappings = []URLMapping{
+	storage.URLMappings = []URLMapping{
 		{
 			UUID:        "test-uuid-1",
 			ShortURL:    "short1",
@@ -208,22 +174,18 @@ func TestSaveToFile(t *testing.T) {
 		},
 	}
 
-	// Создаем временную директорию для файла
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "save_test.json")
 
-	// Сохраняем в файл
-	err := SaveToFile(testFile)
+	err := storage.SaveToFile(testFile)
 	if err != nil {
 		t.Errorf("SaveToFile failed: %v", err)
 	}
 
-	// Проверяем, что файл создан
 	if _, err := os.Stat(testFile); os.IsNotExist(err) {
 		t.Error("File was not created")
 	}
 
-	// Читаем и проверяем содержимое файла
 	data, err := os.ReadFile(testFile)
 	if err != nil {
 		t.Errorf("Failed to read saved file: %v", err)
@@ -249,13 +211,12 @@ func TestSaveToFile(t *testing.T) {
 }
 
 func TestSaveToFile_CreateDirectory(t *testing.T) {
-	// Сохраняем оригинальные данные
-	originalMappings := URLMappings
-	defer func() {
-		URLMappings = originalMappings
-	}()
+	storage := &Storages{
+		urlMap:      make(map[string]string),
+		userURLsMap: make(map[string][]string),
+	}
 
-	URLMappings = []URLMapping{
+	storage.URLMappings = []URLMapping{
 		{
 			UUID:        "test-uuid",
 			ShortURL:    "test-short",
@@ -265,16 +226,14 @@ func TestSaveToFile_CreateDirectory(t *testing.T) {
 		},
 	}
 
-	// Пытаемся сохранить в несуществующую директорию
 	tmpDir := t.TempDir()
 	nestedFile := filepath.Join(tmpDir, "nonexistent", "dir", "test.json")
 
-	err := SaveToFile(nestedFile)
+	err := storage.SaveToFile(nestedFile)
 	if err != nil {
 		t.Errorf("SaveToFile should create directories, but got error: %v", err)
 	}
 
-	// Проверяем, что файл создан
 	if _, err := os.Stat(nestedFile); os.IsNotExist(err) {
 		t.Error("File was not created in nested directory")
 	}

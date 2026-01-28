@@ -7,11 +7,6 @@ import (
 	"log"
 )
 
-var (
-	// defaultManager - глобальный менеджер аудита, используемый пакетом.
-	defaultManager *Manager
-)
-
 // Config содержит конфигурацию системы аудита.
 type Config struct {
 	// AuditFile - путь к файлу для записи аудит-логов.
@@ -27,14 +22,14 @@ type Config struct {
 // Функция должна быть вызвана один раз при запуске приложения.
 // Принимает контекст для graceful shutdown.
 // Возвращает ошибку в случае проблем с инициализацией.
-func Init(ctx context.Context, cfg *Config) error {
-	defaultManager = NewManager()
+func Init(ctx context.Context, cfg *Config) (*Manager, error) {
+	defaultManager := NewManager()
 
 	// Инициализируем файловый писатель, если указан путь
 	if cfg.AuditFile != "" {
 		fw, err := NewFileWriter(cfg.AuditFile)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		defaultManager.Register(fw)
 		log.Printf("File audit enabled: %s", cfg.AuditFile)
@@ -55,13 +50,13 @@ func Init(ctx context.Context, cfg *Config) error {
 		}
 	}()
 
-	return nil
+	return defaultManager, nil
 }
 
 // LogEvent логирует событие аудита в систему.
 // Функция потокобезопасна и может вызываться из нескольких горутин.
 // Если система аудита не инициализирована, событие игнорируется.
-func LogEvent(action Action, userID, url string) {
+func LogEvent(defaultManager *Manager, action Action, userID, url string) {
 	if defaultManager == nil {
 		return
 	}

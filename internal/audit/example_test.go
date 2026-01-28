@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+var defaultManager *Manager
+
 // Example инициализации системы аудита.
 func ExampleInit() {
 	// Создаем временный файл для аудита
@@ -29,7 +31,7 @@ func ExampleInit() {
 	}
 
 	// Инициализация
-	err = Init(ctx, cfg)
+	defaultManager, err = Init(ctx, cfg)
 	if err != nil {
 		fmt.Printf("Ошибка инициализации: %v\n", err)
 		return
@@ -58,9 +60,9 @@ func ExampleLogEvent() {
 	Init(ctx, cfg)
 
 	// Логируем различные события
-	LogEvent(ActionShorten, "user-12345", "https://example.com/very-long-path/to/shorten")
-	LogEvent(ActionFollow, "user-67890", "https://example.com/another-long-url")
-	LogEvent(ActionShorten, "user-abcde", "https://google.com/search?q=golang")
+	LogEvent(defaultManager, ActionShorten, "user-12345", "https://example.com/very-long-path/to/shorten")
+	LogEvent(defaultManager, ActionFollow, "user-67890", "https://example.com/another-long-url")
+	LogEvent(defaultManager, ActionShorten, "user-abcde", "https://google.com/search?q=golang")
 
 	// Даем время на асинхронную обработку
 	time.Sleep(200 * time.Millisecond)

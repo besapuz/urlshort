@@ -25,13 +25,13 @@ func TestAuditSystem(t *testing.T) {
 		AuditURL:  "", // Не тестируем HTTP в юнит-тестах
 	}
 
-	err = Init(ctx, cfg)
+	defaultManager, err := Init(ctx, cfg)
 	if err != nil {
 		t.Fatalf("Failed to init audit: %v", err)
 	}
 
 	// Логируем событие
-	LogEvent(ActionShorten, "test-user-123", "https://example.com/long-url")
+	LogEvent(defaultManager, ActionShorten, "test-user-123", "https://example.com/long-url")
 
 	// Даем время на асинхронную обработку
 	time.Sleep(100 * time.Millisecond)

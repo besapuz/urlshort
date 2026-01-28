@@ -55,7 +55,8 @@ func main() {
 		AuditFile: cfg.AuditFile,
 		AuditURL:  cfg.AuditURL,
 	}
-	if err := audit.Init(ctx, auditCfg); err != nil {
+	defaultManager, err := audit.Init(ctx, auditCfg)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Ошибка инициализации аудита: %v\n", err)
 		os.Exit(1)
 	}
@@ -66,8 +67,8 @@ func main() {
 	}
 
 	if cfg.DatabaseDSN == "" {
-		router.SetStorageFile(cfg.FileStoragePath)
-		if err := router.LoadFromFile(cfg.FileStoragePath); err != nil {
+		shortener.MemoryStorage.SetStorageFile(cfg.FileStoragePath)
+		if err := shortener.MemoryStorage.LoadFromFile(cfg.FileStoragePath); err != nil {
 			fmt.Fprintf(os.Stderr, "Ошибка загрузки файла: %v\n", err)
 			os.Exit(1)
 		}
@@ -82,11 +83,11 @@ func main() {
 	r.Use(handler.GzipMiddleware)
 
 	// Используем старую сигнатуру, но внутри она будет сохранять в файл
-	r.Post("/", shortener.ShortenHandler(cfg.BaseURL))
-	r.Post("/api/shorten", shortener.ShortenJSONHandler(cfg.BaseURL, cfg.FileStoragePath))
+	r.Post("/", shortener.ShortenHandler(defaultManager, cfg.BaseURL))
+	r.Post("/api/shorten", shortener.ShortenJSONHandler(defaultManager, cfg.BaseURL, cfg.FileStoragePath))
 	r.Post("/api/shorten/batch", shortener.BatchShortenHandler(cfg.BaseURL, cfg.FileStoragePath))
 
-	r.Get("/{id}", shortener.RedirectHandler)
+	r.Get("/{id}", shortener.RedirectHandler(defaultManager))
 	r.Get("/ping", shortener.PingHandler)
 	r.Get("/api/user/urls", shortener.GetUserURLsHandler(cfg.BaseURL))
 
