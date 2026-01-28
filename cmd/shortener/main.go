@@ -33,20 +33,16 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
-		<-sigChan
-		cancel()
-	}()
-	go func() {
-		for {
-			sig := <-sigChan
+		for sig := range sigChan {
 			switch sig {
 			case syscall.SIGUSR1:
-				// Дамп памяти по сигналу SIGUSR1
 				fmt.Println("Received SIGUSR1, dumping memory stats...")
 				dumpMemoryStats()
-			default:
+			case syscall.SIGINT, syscall.SIGTERM:
 				fmt.Printf("Received signal %v, shutting down...\n", sig)
 				cancel()
+			default:
+				fmt.Printf("Received unexpected signal %v\n", sig)
 			}
 		}
 	}()
