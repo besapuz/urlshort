@@ -64,6 +64,7 @@ func main() {
 		BaseURL:         cfg.BaseURL,
 		FileStoragePath: cfg.FileStoragePath,
 		CookieSecret:    cfg.GetCookieSecret(),
+		MemoryStorage:   router.NewStorages(),
 	}
 
 	if cfg.DatabaseDSN == "" {

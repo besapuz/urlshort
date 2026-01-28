@@ -94,3 +94,13 @@ func (s *Storages) SaveToFile(filePath string) error {
 	}
 	return nil
 }
+
+// NewStorages создает новый инициализированный экземпляр Storages
+func NewStorages() *Storages {
+	return &Storages{
+		urlMap:      make(map[string]string),
+		userURLsMap: make(map[string][]string),
+		URLMappings: []URLMapping{},
+		mutex:       sync.Mutex{},
+	}
+}
