@@ -25,6 +25,7 @@ func BenchmarkAuditLogEvent(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
+	defer defaultManager.Close()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

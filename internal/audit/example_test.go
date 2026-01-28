@@ -7,8 +7,6 @@ import (
 	"time"
 )
 
-var defaultManager *Manager
-
 // Example инициализации системы аудита.
 func ExampleInit() {
 	// Создаем временный файл для аудита
@@ -31,11 +29,12 @@ func ExampleInit() {
 	}
 
 	// Инициализация
-	defaultManager, err = Init(ctx, cfg)
+	defaultManager, err := Init(ctx, cfg)
 	if err != nil {
 		fmt.Printf("Ошибка инициализации: %v\n", err)
 		return
 	}
+	defer defaultManager.Close()
 
 	fmt.Println("Система аудита инициализирована")
 	time.Sleep(100 * time.Millisecond)
@@ -46,18 +45,31 @@ func ExampleInit() {
 
 // Example логирования событий аудита.
 func ExampleLogEvent() {
-	// Инициализация (в реальном приложении делается один раз при старте)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	tmpFile, _ := os.CreateTemp("", "audit-log-*.json")
+	// Создаем временный файл для аудита
+	tmpFile, err := os.CreateTemp("", "audit-log-*.json")
+	if err != nil {
+		fmt.Printf("Ошибка создания файла: %v\n", err)
+		return
+	}
 	defer os.Remove(tmpFile.Name())
 	tmpFile.Close()
 
+	// Контекст для инициализации
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Конфигурация системы аудита
 	cfg := &Config{
 		AuditFile: tmpFile.Name(),
 	}
-	Init(ctx, cfg)
+
+	// Инициализация
+	defaultManager, err := Init(ctx, cfg)
+	if err != nil {
+		fmt.Printf("Ошибка инициализации: %v\n", err)
+		return
+	}
+	defer defaultManager.Close()
 
 	// Логируем различные события
 	LogEvent(defaultManager, ActionShorten, "user-12345", "https://example.com/very-long-path/to/shorten")
@@ -68,10 +80,16 @@ func ExampleLogEvent() {
 	time.Sleep(200 * time.Millisecond)
 
 	// Проверяем, что файл создан
-	content, _ := os.ReadFile(tmpFile.Name())
+	content, err := os.ReadFile(tmpFile.Name())
+	if err != nil {
+		fmt.Printf("Ошибка чтения файла: %v\n", err)
+		return
+	}
+
+	// Подсчитываем количество строк (событий)
 	lines := 0
-	for _, b := range content {
-		if b == '\n' {
+	for i := 0; i < len(content); i++ {
+		if content[i] == '\n' {
 			lines++
 		}
 	}
