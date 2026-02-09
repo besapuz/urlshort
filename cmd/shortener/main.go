@@ -57,16 +57,14 @@ func main() {
 	}
 	defaultManager, err := audit.Init(ctx, auditCfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Ошибка инициализации аудита: %v\n", err)
-		os.Exit(1)
+		panic(fmt.Sprintf("Ошибка инициализации аудита: %v", err))
 	}
 	var shortener *router.URLShortener
 	if cfg.DatabaseDSN != "" {
 		// Используем конструктор с БД
 		shortener, err = router.NewURLShortenerWithDB(cfg.BaseURL, cfg.GetCookieSecret(), cfg.DatabaseDSN)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Ошибка инициализации базы данных: %v\n", err)
-			os.Exit(1)
+			panic(fmt.Sprintf("Ошибка инициализации базы данных: %v\n", err))
 		}
 	} else {
 		// Используем конструктор без БД
@@ -74,22 +72,19 @@ func main() {
 		shortener.FileStoragePath = cfg.FileStoragePath
 		shortener.MemoryStorage.SetStorageFile(cfg.FileStoragePath)
 		if err := shortener.MemoryStorage.LoadFromFile(cfg.FileStoragePath); err != nil {
-			fmt.Fprintf(os.Stderr, "Ошибка загрузки файла: %v\n", err)
-			os.Exit(1)
+			panic(fmt.Sprintf("Ошибка загрузки файла: %v\n", err))
 		}
 	}
 
 	if cfg.DatabaseDSN == "" {
 		shortener.MemoryStorage.SetStorageFile(cfg.FileStoragePath)
 		if err := shortener.MemoryStorage.LoadFromFile(cfg.FileStoragePath); err != nil {
-			fmt.Fprintf(os.Stderr, "Ошибка загрузки файла: %v\n", err)
-			os.Exit(1)
+			panic(fmt.Sprintf("Ошибка загрузки файла: %v\n", err))
 		}
 	}
 	if cfg.DatabaseDSN != "" {
 		if err := shortener.InitDBStorage(cfg.DatabaseDSN); err != nil {
-			fmt.Fprintf(os.Stderr, "Ошибка инициализации базы данных: %v\n", err)
-			os.Exit(1)
+			panic(fmt.Sprintf("Ошибка инициализации базы данных: %v\n", err))
 		}
 	}
 
