@@ -1,3 +1,5 @@
+// Package config предоставляет конфигурацию для URL shortener сервиса.
+// Поддерживает чтение конфигурации из флагов командной строки и переменных окружения.
 package config
 
 import (
@@ -8,14 +10,42 @@ import (
 	"path/filepath"
 )
 
+// Config содержит все параметры конфигурации приложения.
 type Config struct {
-	Address         string
-	BaseURL         string
-	LogLevel        string
+	// Address - адрес и порт для запуска HTTP сервера.
+	// По умолчанию: "localhost:8080".
+	Address string
+
+	// BaseURL - базовый URL для сокращенных ссылок.
+	// По умолчанию: совпадает с Address.
+	BaseURL string
+
+	// LogLevel - уровень логирования (debug, info, warn, error).
+	LogLevel string
+
+	// FileStoragePath - путь к файлу для хранения URL.
+	// По умолчанию: временный файл в системной директории.
 	FileStoragePath string
-	DatabaseDSN     string
+
+	// DatabaseDSN - строка подключения к базе данных PostgreSQL.
+	DatabaseDSN string
+
+	// CookieSecret - секретный ключ для подписи куки.
+	CookieSecret []byte
+
+	// AuditFile - путь к файлу для аудит-логов.
+	AuditFile string
+
+	// AuditURL - URL для отправки аудит-событий.
+	AuditURL string
 }
 
+// NewConfig создает новую конфигурацию, читая параметры из:
+// 1. Флагов командной строки
+// 2. Переменных окружения
+// 3. Значений по умолчанию
+//
+// Переменные окружения имеют приоритет над флагами командной строки.
 func NewConfig() *Config {
 	cfg := &Config{}
 
@@ -24,9 +54,12 @@ func NewConfig() *Config {
 	flag.StringVar(&cfg.LogLevel, "l", "", "log level")
 	flag.StringVar(&cfg.FileStoragePath, "f", "", "path to file storage")
 	flag.StringVar(&cfg.DatabaseDSN, "d", "", "database connect")
+	flag.StringVar(&cfg.AuditFile, "audit-file", "", "audit file")
+	flag.StringVar(&cfg.AuditURL, "audit-url", "", "audit url")
 
 	flag.Parse()
 
+	// Чтение из переменных окружения
 	if envRunAddres := os.Getenv("SERVER_ADDRESS"); envRunAddres != "" {
 		cfg.Address = envRunAddres
 	}
@@ -41,6 +74,17 @@ func NewConfig() *Config {
 	}
 	if envDatabaseDSN := os.Getenv("DATABASE_DSN"); envDatabaseDSN != "" {
 		cfg.DatabaseDSN = envDatabaseDSN
+	}
+	if envAuditFile := os.Getenv("AUDIT_FILE"); envAuditFile != "" {
+		cfg.AuditFile = envAuditFile
+	}
+	if envAuditURL := os.Getenv("AUDIT_URL"); envAuditURL != "" {
+		cfg.AuditURL = envAuditURL
+	}
+	if envCookieSecret := os.Getenv("COOKIE_SECRET"); envCookieSecret != "" {
+		cfg.CookieSecret = []byte(envCookieSecret)
+	} else {
+		cfg.CookieSecret = []byte("test-secret-key-12345")
 	}
 
 	// Если BaseURL отсутствует, формируем его из Address
@@ -61,9 +105,15 @@ func NewConfig() *Config {
 		cfg.FileStoragePath = filepath.Join(os.TempDir(), "urls.json")
 	}
 
+	// Создаем директорию для файла хранилища
 	dir := filepath.Dir(cfg.FileStoragePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		panic(err)
 	}
 	return cfg
+}
+
+// GetCookieSecret возвращает секретный ключ для подписи куки.
+func (c *Config) GetCookieSecret() []byte {
+	return c.CookieSecret
 }

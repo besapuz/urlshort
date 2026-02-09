@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,18 +9,23 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/besapuz/urlshort/internal/app"
+	"github.com/besapuz/urlshort/internal/audit"
 	"github.com/besapuz/urlshort/internal/config/db"
 	"github.com/google/uuid"
-	"github.com/jackc/pgerrcode"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
-var (
-	dbstorage *db.DBStorage
-	useDB     bool
-)
+type URLShortener struct {
+	DBStorage       *db.DBStorage
+	UseDB           bool
+	FileStoragePath string
+	BaseURL         string
+	CookieSecret    []byte
+	MemoryStorage   *Storages
+}
 
 var req struct {
 	URL string `json:"url"`
@@ -35,24 +41,59 @@ type BatchResponseItem struct {
 	ShortURL      string `json:"short_url"`
 }
 
+type UserURLResponse struct {
+	ShortURL    string `json:"short_url"`
+	OriginalURL string `json:"original_url"`
+}
+
+// NewURLShortener создает новый инициализированный URLShortener
+func NewURLShortener(baseURL string, cookieSecret []byte) *URLShortener {
+	return &URLShortener{
+		BaseURL:       baseURL,
+		CookieSecret:  cookieSecret,
+		MemoryStorage: NewStorages(),
+		UseDB:         false,
+	}
+}
+
+// NewURLShortenerWithDB создает URLShortener с поддержкой БД
+func NewURLShortenerWithDB(baseURL string, cookieSecret []byte, dsn string) (*URLShortener, error) {
+	storage, err := db.NewDBStorage(dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	return &URLShortener{
+		BaseURL:       baseURL,
+		CookieSecret:  cookieSecret,
+		MemoryStorage: NewStorages(),
+		DBStorage:     storage,
+		UseDB:         true,
+	}, nil
+}
+
 // InitDBStorage - инициализация хранилища в базе данных
-func InitDBStorage(dsn string) error {
+func (s *URLShortener) InitDBStorage(dsn string) error {
 	storage, err := db.NewDBStorage(dsn)
 	if err != nil {
 		return err
 	}
-	dbstorage = storage
-	useDB = true
+	s.DBStorage = storage
+	s.UseDB = true
 	return nil
 }
 
 // ShortenJSONHandler - обработчик POST-запросов в формате JSON.
-func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r *http.Request) {
+func (s *URLShortener) ShortenJSONHandler(defaultManager *audit.Manager, baseURL, filePath string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Аутентифицируем пользователя
+		userID := authenticateUser(w, r, s.CookieSecret)
+
 		if r.Header.Get("Content-Type") != "application/json" {
 			http.Error(w, "", http.StatusBadRequest)
 			return
 		}
+
 		body, err := io.ReadAll(r.Body)
 		if err != nil || len(body) == 0 {
 			http.Error(w, "", http.StatusBadRequest)
@@ -74,8 +115,15 @@ func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r 
 		shortID := app.GenerateShortID(8)
 		newUUID := uuid.New().String()
 
-		if useDB {
-			savedShortID, err := dbstorage.SaveURLWithConflictCheck(r.Context(), newUUID, shortID, url)
+		defer func() {
+			// Аудит успешного создания
+			if r.Method == http.MethodPost && err == nil && url != "" {
+				audit.LogEvent(defaultManager, audit.ActionShorten, userID, url)
+			}
+		}()
+
+		if s.UseDB {
+			savedShortID, err := s.DBStorage.SaveURLWithConflictCheck(r.Context(), newUUID, shortID, url, userID)
 			if err != nil {
 				if errors.Is(err, db.ErrURLConflict) {
 					// URL уже существует - возвращаем конфликт
@@ -92,17 +140,23 @@ func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r 
 			}
 			shortID = savedShortID // Используем фактически сохраненный shortID
 		} else if filePath != "" {
-			urlMap[shortID] = url
-			URLMappings = append(URLMappings, URLMapping{
+			s.MemoryStorage.urlMap[shortID] = url
+			s.MemoryStorage.URLMappings = append(s.MemoryStorage.URLMappings, URLMapping{
 				UUID:        newUUID,
 				ShortURL:    shortID,
 				OriginalURL: url,
+				UserID:      userID,
 			})
-			if err := SaveToFile(filePath); err != nil {
+			if err := s.MemoryStorage.SaveToFile(filePath); err != nil {
 				log.Printf("Error saving to file: %v", err)
 			}
 		} else {
-			urlMap[shortID] = url
+			s.MemoryStorage.urlMap[shortID] = url
+			if userURLs, exists := s.MemoryStorage.userURLsMap[userID]; exists {
+				s.MemoryStorage.userURLsMap[userID] = append(userURLs, shortID)
+			} else {
+				s.MemoryStorage.userURLsMap[userID] = []string{shortID}
+			}
 		}
 
 		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
@@ -122,8 +176,9 @@ func ShortenJSONHandler(baseURL, filePath string) func(w http.ResponseWriter, r 
 }
 
 // ShortenHandler - обработчик POST-запросов.
-func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request) {
+func (s *URLShortener) ShortenHandler(defaultManager *audit.Manager, baseURL string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		userID := authenticateUser(w, r, s.CookieSecret)
 		if r.Header.Get("Content-Type") != "text/plain" {
 			http.Error(w, "", http.StatusBadRequest)
 			return
@@ -141,13 +196,20 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 			http.Error(w, "", http.StatusBadRequest)
 			return
 		}
-		filePath := GetStorageFilePath()
+		filePath := s.MemoryStorage.GetStorageFilePath()
 
 		shortID := app.GenerateShortID(8)
 		newUUID := uuid.New().String()
 
-		if useDB {
-			savedShortID, err := dbstorage.SaveURLWithConflictCheck(r.Context(), newUUID, shortID, url)
+		defer func() {
+			// Аудит успешного создания
+			if r.Method == http.MethodPost && err == nil {
+				audit.LogEvent(defaultManager, audit.ActionShorten, userID, url)
+			}
+		}()
+
+		if s.UseDB {
+			savedShortID, err := s.DBStorage.SaveURLWithConflictCheck(r.Context(), newUUID, shortID, url, userID)
 			if err != nil {
 				if errors.Is(err, db.ErrURLConflict) {
 					// URL уже существует - возвращаем конфликт
@@ -163,17 +225,23 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 			}
 			shortID = savedShortID // Используем фактически сохраненный shortID
 		} else if filePath != "" {
-			urlMap[shortID] = url
-			URLMappings = append(URLMappings, URLMapping{
+			s.MemoryStorage.urlMap[shortID] = url
+			s.MemoryStorage.URLMappings = append(s.MemoryStorage.URLMappings, URLMapping{
 				UUID:        newUUID,
 				ShortURL:    shortID,
 				OriginalURL: url,
+				UserID:      userID,
 			})
-			if err := SaveToFile(filePath); err != nil {
+			if err := s.MemoryStorage.SaveToFile(filePath); err != nil {
 				log.Printf("Error saving to file: %v", err)
 			}
 		} else {
-			urlMap[shortID] = url
+			s.MemoryStorage.urlMap[shortID] = url
+			if userURLs, exists := s.MemoryStorage.userURLsMap[userID]; exists {
+				s.MemoryStorage.userURLsMap[userID] = append(userURLs, shortID)
+			} else {
+				s.MemoryStorage.userURLsMap[userID] = []string{shortID}
+			}
 		}
 
 		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
@@ -186,40 +254,138 @@ func ShortenHandler(baseURL string) func(w http.ResponseWriter, r *http.Request)
 	}
 }
 
-// RedirectHandler - обработчик GET-запросов.
-func RedirectHandler(w http.ResponseWriter, r *http.Request) {
-	id := strings.TrimPrefix(r.URL.Path, "/")
-	if id == "" {
-		http.Error(w, "", http.StatusBadRequest)
-		return
-	}
-	var exists bool
-	var url string
-	var err error
-	if useDB {
-		url, err = dbstorage.GetURL(r.Context(), id)
+// GetUserURLsHandler - обработчик для получения всех URL пользователя
+func (s *URLShortener) GetUserURLsHandler(baseURL string) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Проверяем аутентификацию
+		userID := authenticateUser(w, r, s.CookieSecret)
+
+		var userURLs []UserURLResponse
+
+		if s.UseDB {
+			// Получаем URL пользователя из базы данных
+			urls, err := s.DBStorage.GetUserURLs(r.Context(), userID)
+			if err != nil {
+				log.Printf("Error getting user URLs from database: %v", err)
+				http.Error(w, "Database error", http.StatusInternalServerError)
+				return
+			}
+
+			fullBaseURL := baseURL
+			if !strings.HasPrefix(fullBaseURL, "http://") && !strings.HasPrefix(fullBaseURL, "https://") {
+				fullBaseURL = "http://" + fullBaseURL
+			}
+
+			for _, url := range urls {
+				userURLs = append(userURLs, UserURLResponse{ShortURL: fmt.Sprintf("%s/%s", fullBaseURL, url.ShortURL), // Используем fullBaseURL с протоколом
+					OriginalURL: url.OriginalURL,
+				})
+			}
+		} else {
+			// Получаем URL пользователя из файлового хранилища или памяти
+			s.MemoryStorage.mutex.Lock()
+			defer s.MemoryStorage.mutex.Unlock()
+
+			fullBaseURL := baseURL
+			if !strings.HasPrefix(fullBaseURL, "http://") && !strings.HasPrefix(fullBaseURL, "https://") {
+				fullBaseURL = "http://" + fullBaseURL
+			}
+
+			if filePath := s.MemoryStorage.GetStorageFilePath(); filePath != "" {
+				// Ищем в файловом хранилище
+				for _, mapping := range s.MemoryStorage.URLMappings {
+					if mapping.UserID == userID && !mapping.DeletedFlag { // Добавляем проверку на удаление
+						userURLs = append(userURLs, UserURLResponse{
+							ShortURL:    fmt.Sprintf("%s/%s", fullBaseURL, mapping.ShortURL),
+							OriginalURL: mapping.OriginalURL,
+						})
+					}
+				}
+			} else {
+				// Ищем в in-memory хранилище
+				if shortIDs, exists := s.MemoryStorage.userURLsMap[userID]; exists {
+					for _, shortID := range shortIDs {
+						if originalURL, exists := s.MemoryStorage.urlMap[shortID]; exists {
+							userURLs = append(userURLs, UserURLResponse{
+								ShortURL:    fmt.Sprintf("%s/%s", fullBaseURL, shortID),
+								OriginalURL: originalURL,
+							})
+						}
+					}
+				}
+			}
+		}
+
+		if len(userURLs) == 0 {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		// Возвращаем список URL
+		response, err := json.Marshal(userURLs)
 		if err != nil {
-			http.Error(w, "", http.StatusBadRequest)
+			http.Error(w, "Error creating response", http.StatusInternalServerError)
 			return
 		}
-	} else {
-		url, exists = urlMap[id]
-		if !exists {
-			http.Error(w, "", http.StatusBadRequest)
-			return
-		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(response)
 	}
-	w.Header().Set("Location", url)
-	w.WriteHeader(http.StatusTemporaryRedirect)
+}
+
+// RedirectHandler - обработчик GET-запросов.
+func (s *URLShortener) RedirectHandler(defaultManager *audit.Manager) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(r.URL.Path, "/")
+		if id == "" {
+			http.Error(w, "", http.StatusBadRequest)
+			return
+		}
+
+		// Получаем userID из куки
+		userID := authenticateUser(w, r, s.CookieSecret)
+
+		var exists bool
+		var url string
+		var err error
+
+		defer func() {
+			// Аудит успешного перехода по ссылке
+			if r.Method == http.MethodGet && (exists || url != "") {
+				audit.LogEvent(defaultManager, audit.ActionFollow, userID, url)
+			}
+		}()
+
+		if s.UseDB {
+			url, err = s.DBStorage.GetURL(r.Context(), id)
+			if err != nil {
+				if err.Error() == "URL was deleted" {
+					http.Error(w, "URL was deleted", http.StatusGone)
+					return
+				}
+				http.Error(w, "", http.StatusBadRequest)
+				return
+			}
+		} else {
+			url, exists = s.MemoryStorage.urlMap[id]
+			if !exists {
+				http.Error(w, "", http.StatusBadRequest)
+				return
+			}
+		}
+		w.Header().Set("Location", url)
+		w.WriteHeader(http.StatusTemporaryRedirect)
+	}
 }
 
 // PingHandler - обработчик для проверки соединения с БД.
-func PingHandler(w http.ResponseWriter, r *http.Request) {
-	if !useDB || dbstorage == nil {
+func (s *URLShortener) PingHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.UseDB || s.DBStorage == nil {
 		http.Error(w, "Database not configurated", http.StatusInternalServerError)
 		return
 	}
-	if err := dbstorage.Ping(); err != nil {
+	if err := s.DBStorage.Ping(); err != nil {
 		http.Error(w, "Database connection failed", http.StatusInternalServerError)
 	}
 	w.WriteHeader(http.StatusOK)
@@ -227,8 +393,9 @@ func PingHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // BatchShortenHandler - обработчик для пакетного сокращения URL
-func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r *http.Request) {
+func (s *URLShortener) BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		userID := authenticateUser(w, r, s.CookieSecret)
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -274,74 +441,59 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 		// Обработка для базы данных
 		var batchResponses []BatchResponseItem
 
-		if useDB {
-			tx, err := dbstorage.DB.Begin()
-			if err != nil {
-				log.Printf("Error starting transaction: %v", err)
-				http.Error(w, "Database error", http.StatusInternalServerError)
-				return
-			}
-			defer tx.Rollback()
-
+		if s.UseDB {
+			// Используем отдельные вызовы SaveURLWithConflictCheck для каждого URL
 			for _, item := range batchRequests {
 				shortID := app.GenerateShortID(8)
 				newUUID := uuid.New().String()
 
-				// Используем SaveURLWithConflictCheck логику в транзакции
-				_, err := tx.ExecContext(r.Context(),
-					`INSERT INTO url_mappings (uuid, short_url, original_url) VALUES ($1, $2, $3)`,
-					newUUID, shortID, item.OriginalURL)
-
+				savedShortID, err := s.DBStorage.SaveURLWithConflictCheck(r.Context(), newUUID, shortID, item.OriginalURL, userID)
 				if err != nil {
-					var pgErr *pgconn.PgError
-					if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation && pgErr.ConstraintName == "idx_original_url" {
-						// Получаем существующий shortURL
-						var existingShortURL string
-						err := tx.QueryRowContext(r.Context(),
-							`SELECT short_url FROM url_mappings WHERE original_url = $1`, item.OriginalURL).Scan(&existingShortURL)
-						if err != nil {
-							log.Printf("Error getting existing short URL: %v", err)
-							http.Error(w, "Database error", http.StatusInternalServerError)
-							return
-						}
-						shortID = existingShortURL
-					} else {
-						log.Printf("Error saving URL to database: %v", err)
-						http.Error(w, "Database error", http.StatusInternalServerError)
-						return
+					if errors.Is(err, db.ErrURLConflict) {
+						// URL уже существует - используем существующий
+						batchResponses = append(batchResponses, BatchResponseItem{
+							CorrelationID: item.CorrelationID,
+							ShortURL:      fmt.Sprintf("%s/%s", baseURL, savedShortID),
+						})
+						continue
 					}
+					log.Printf("Error saving URL to database: %v", err)
+					http.Error(w, "Database error", http.StatusInternalServerError)
+					return
 				}
 
 				batchResponses = append(batchResponses, BatchResponseItem{
 					CorrelationID: item.CorrelationID,
-					ShortURL:      fmt.Sprintf("%s/%s", baseURL, shortID),
+					ShortURL:      fmt.Sprintf("%s/%s", baseURL, savedShortID),
 				})
-			}
-
-			if err := tx.Commit(); err != nil {
-				log.Printf("Error committing transaction: %v", err)
-				http.Error(w, "Database error", http.StatusInternalServerError)
-				return
 			}
 		} else {
 			// Обработка для файлового хранилища и памяти
-			mutex.Lock()
-			defer mutex.Unlock()
+			s.MemoryStorage.mutex.Lock()
+			defer s.MemoryStorage.mutex.Unlock()
 
 			for _, item := range batchRequests {
 				shortID := app.GenerateShortID(8)
 				newUUID := uuid.New().String()
 
 				// Сохраняем в память
-				urlMap[shortID] = item.OriginalURL
+				s.MemoryStorage.urlMap[shortID] = item.OriginalURL
 
 				// Сохраняем в файловое хранилище, если указан путь
 				if filePath != "" {
-					URLMappings = append(URLMappings, URLMapping{
+					s.MemoryStorage.URLMappings = append(s.MemoryStorage.URLMappings, URLMapping{
 						UUID:        newUUID,
 						ShortURL:    shortID,
 						OriginalURL: item.OriginalURL,
+						UserID:      userID,
 					})
+				} else {
+					// Для in-memory хранилища сохраняем userID
+					if userURLs, exists := s.MemoryStorage.userURLsMap[userID]; exists {
+						s.MemoryStorage.userURLsMap[userID] = append(userURLs, shortID)
+					} else {
+						s.MemoryStorage.userURLsMap[userID] = []string{shortID}
+					}
 				}
 
 				batchResponses = append(batchResponses, BatchResponseItem{
@@ -352,9 +504,8 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 
 			// Сохраняем в файл, если указан путь
 			if filePath != "" {
-				if err := SaveToFile(filePath); err != nil {
+				if err := s.MemoryStorage.SaveToFile(filePath); err != nil {
 					log.Printf("Error saving to file: %v", err)
-					// Не прерываем выполнение, только логируем ошибку
 				}
 			}
 		}
@@ -369,4 +520,183 @@ func BatchShortenHandler(baseURL, filePath string) func(w http.ResponseWriter, r
 		w.WriteHeader(http.StatusCreated)
 		w.Write(response)
 	}
+}
+
+// DeleteURLsHandler - улучшенный обработчик для удаления URL с fan-in паттерном
+func (s *URLShortener) DeleteURLsHandler() func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Проверяем аутентификацию
+		userID := authenticateUser(w, r, s.CookieSecret)
+
+		if r.Header.Get("Content-Type") != "application/json" {
+			http.Error(w, "Content-Type must be application/json", http.StatusBadRequest)
+			return
+		}
+
+		// Читаем тело запроса
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Error reading request body", http.StatusBadRequest)
+			return
+		}
+		defer r.Body.Close()
+
+		// Парсим JSON с short IDs
+		var shortIDs []string
+		if err := json.Unmarshal(body, &shortIDs); err != nil {
+			http.Error(w, "Invalid JSON format", http.StatusBadRequest)
+			return
+		}
+
+		if len(shortIDs) == 0 {
+			http.Error(w, "Empty request", http.StatusBadRequest)
+			return
+		}
+
+		// Логируем запрос на удаление
+		log.Printf("Received delete request for %d URLs from user %s", len(shortIDs), userID)
+
+		// Для базы данных - используем улучшенный метод с fan-in паттерном
+		if s.UseDB {
+			go func(ids []string, uid string) {
+				start := time.Now()
+				log.Printf("Starting async deletion of %d URLs for user %s", len(ids), uid)
+
+				if err := s.deleteURLsBatch(ids, uid); err != nil {
+					log.Printf("Error deleting URLs in batch: %v", err)
+				} else {
+					duration := time.Since(start)
+					log.Printf("Successfully completed deletion of %d URLs for user %s in %v",
+						len(ids), uid, duration)
+				}
+			}(shortIDs, userID)
+		} else {
+			// Для файлового хранилища и памяти
+			go func(ids []string, uid string) {
+				start := time.Now()
+				log.Printf("Starting async deletion of %d URLs for user %s (file/memory)", len(ids), uid)
+
+				if err := s.deleteURLsBatch(ids, uid); err != nil {
+					log.Printf("Error deleting URLs in batch: %v", err)
+				} else {
+					duration := time.Since(start)
+					log.Printf("Successfully completed deletion of %d URLs for user %s in %v",
+						len(ids), uid, duration)
+				}
+			}(shortIDs, userID)
+		}
+
+		// Возвращаем Accepted, так как удаление происходит асинхронно
+		w.WriteHeader(http.StatusAccepted)
+		w.Write([]byte("Delete request accepted"))
+	}
+}
+
+// deleteURLsBatch - удаляет URL в батче с использованием fan-in паттерна
+func (s *URLShortener) deleteURLsBatch(shortIDs []string, userID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	batchSize := 10 // Уменьшаем размер батча для лучшей параллельности
+	batches := make(chan []string)
+	results := make(chan error, len(shortIDs)/batchSize+1) // Буферизованный канал
+
+	// Горутина для разбивки на батчи
+	go func() {
+		defer close(batches)
+		for i := 0; i < len(shortIDs); i += batchSize {
+			end := i + batchSize
+			if end > len(shortIDs) {
+				end = len(shortIDs)
+			}
+			batches <- shortIDs[i:end]
+		}
+	}()
+
+	// Запускаем воркеры для обработки батчей
+	numWorkers := 3
+	var wg sync.WaitGroup
+
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for batch := range batches {
+				log.Printf("Worker %d processing batch of %d URLs", workerID, len(batch))
+				err := s.processBatch(ctx, batch, userID)
+				results <- err
+				if err != nil {
+					log.Printf("Worker %d error: %v", workerID, err)
+				} else {
+					log.Printf("Worker %d successfully processed batch", workerID)
+				}
+			}
+		}(i)
+	}
+
+	// Закрываем results после завершения всех воркеров
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Собираем результаты (fan-in)
+	var finalErr error
+	processedBatches := 0
+	totalBatches := (len(shortIDs) + batchSize - 1) / batchSize
+
+	for err := range results {
+		processedBatches++
+		if err != nil && finalErr == nil {
+			finalErr = err
+		}
+		log.Printf("Processed batch %d/%d", processedBatches, totalBatches)
+	}
+
+	log.Printf("Completed batch deletion: %d/%d batches processed", processedBatches, totalBatches)
+	return finalErr
+}
+
+// processBatch - обрабатывает один батч URL для удаления
+func (s *URLShortener) processBatch(ctx context.Context, shortIDs []string, userID string) error {
+	if s.UseDB {
+		return s.DBStorage.DeleteURLs(ctx, shortIDs, userID)
+	}
+
+	// Для файлового хранилища и памяти
+	s.MemoryStorage.mutex.Lock()
+	defer s.MemoryStorage.mutex.Unlock()
+
+	// Помечаем URL как удаленные
+	for _, shortID := range shortIDs {
+		// Ищем в файловом хранилище
+		if filePath := s.MemoryStorage.GetStorageFilePath(); filePath != "" {
+			for i := range s.MemoryStorage.URLMappings {
+				if s.MemoryStorage.URLMappings[i].ShortURL == shortID && s.MemoryStorage.URLMappings[i].UserID == userID {
+					s.MemoryStorage.URLMappings[i].DeletedFlag = true
+				}
+			}
+		} else {
+			// Для in-memory хранилища - удаляем из urlMap
+			delete(s.MemoryStorage.urlMap, shortID)
+			// И из userURLsMap
+			if userURLs, exists := s.MemoryStorage.userURLsMap[userID]; exists {
+				for i, id := range userURLs {
+					if id == shortID {
+						s.MemoryStorage.userURLsMap[userID] = append(userURLs[:i], userURLs[i+1:]...)
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Сохраняем изменения в файл, если указан путь
+	if filePath := s.MemoryStorage.GetStorageFilePath(); filePath != "" {
+		if err := s.MemoryStorage.SaveToFile(filePath); err != nil {
+			return fmt.Errorf("failed to save to file: %w", err)
+		}
+	}
+
+	return nil
 }

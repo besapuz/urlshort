@@ -6,36 +6,45 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/besapuz/urlshort/internal/audit"
 	"github.com/stretchr/testify/assert"
 )
+
+var defManager *audit.Manager
 
 // TestRedirectHandler - тестирование функции main/redirectHandler.
 func TestRedirectHandler(t *testing.T) {
 	tests := []struct {
 		name           string
 		path           string
-		setup          func()
+		setup          func(*URLShortener)
 		expectedStatus int
 		expectedHeader string
 	}{
 		{
-			name:           "Пустой идентификатор",
-			path:           "/",
-			setup:          func() { urlMap = map[string]string{} },
+			name: "Пустой идентификатор",
+			path: "/",
+			setup: func(s *URLShortener) {
+				s.MemoryStorage.urlMap = make(map[string]string)
+			},
 			expectedStatus: http.StatusBadRequest,
 			expectedHeader: "",
 		},
 		{
-			name:           "Валидный идентификатор",
-			path:           "/example",
-			setup:          func() { urlMap = map[string]string{"example": "https://example.com"} },
+			name: "Валидный идентификатор",
+			path: "/example",
+			setup: func(s *URLShortener) {
+				s.MemoryStorage.urlMap = map[string]string{"example": "https://example.com"}
+			},
 			expectedStatus: http.StatusTemporaryRedirect,
 			expectedHeader: "https://example.com",
 		},
 		{
-			name:           "Невалидный идентификатор",
-			path:           "/invalid",
-			setup:          func() { urlMap = map[string]string{"valid": "https://valid.com"} },
+			name: "Невалидный идентификатор",
+			path: "/invalid",
+			setup: func(s *URLShortener) {
+				s.MemoryStorage.urlMap = map[string]string{"valid": "https://valid.com"}
+			},
 			expectedStatus: http.StatusBadRequest,
 			expectedHeader: "",
 		},
@@ -43,15 +52,15 @@ func TestRedirectHandler(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.setup()
+			// ИСПОЛЬЗУЕМ КОНСТРУКТОР
+			shortener := NewURLShortener("http://localhost:8080", []byte("test-secret"))
+			tt.setup(shortener)
 
-			req, err := http.NewRequest("GET", tt.path, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-
+			req := httptest.NewRequest("GET", tt.path, nil)
 			rr := httptest.NewRecorder()
-			RedirectHandler(rr, req)
+
+			handler := shortener.RedirectHandler(defManager)
+			handler(rr, req)
 
 			if status := rr.Code; status != tt.expectedStatus {
 				t.Errorf("handler вернул неправильный статус: получил %v, ожидал %v", status, tt.expectedStatus)
@@ -66,9 +75,7 @@ func TestRedirectHandler(t *testing.T) {
 }
 
 // TestShortenHandler - тестирование функции main/shortenHandler.
-
 func TestShortenHandler(t *testing.T) {
-
 	tests := []struct {
 		name           string
 		contentType    string
@@ -103,22 +110,16 @@ func TestShortenHandler(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// ИСПОЛЬЗУЕМ КОНСТРУКТОР
+			shortener := NewURLShortener("http://localhost:8080", []byte("test-secret"))
 
-			// Сброс глобального состояния
-			urlMap = make(map[string]string)
-
-			// Создание запроса
 			req := httptest.NewRequest("POST", "/", strings.NewReader(tt.body))
 			req.Header.Set("Content-Type", tt.contentType)
-
-			// Создание ответа
 			rr := httptest.NewRecorder()
 
-			// Вызов обработчика
-			handler := ShortenHandler("http://localhost:8080")
+			handler := shortener.ShortenHandler(defManager, "http://localhost:8080")
 			handler(rr, req)
 
-			// Проверка статуса
 			assert.Equal(t, tt.expectedStatus, rr.Code)
 		})
 	}
@@ -126,7 +127,6 @@ func TestShortenHandler(t *testing.T) {
 
 // TestShortenJSONHandler - тестирование функции shortenJSONHandler.
 func TestShortenJSONHandler(t *testing.T) {
-
 	tests := []struct {
 		name           string
 		contentType    string
@@ -138,50 +138,51 @@ func TestShortenJSONHandler(t *testing.T) {
 			name:           "Valid Content-Type",
 			contentType:    "application/json",
 			body:           `{"url": "https://example.com"}`,
-			filePath:       "testdata/urls.json",
+			filePath:       "",
 			expectedStatus: http.StatusCreated,
 		},
 		{
-			name:           "Empty body",
+			name:           "Invalid Content-Type",
 			contentType:    "text/plain",
+			body:           `{"url": "https://example.com"}`,
+			filePath:       "",
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Empty body",
+			contentType:    "application/json",
 			body:           "",
-			filePath:       "testdata/urls.json",
+			filePath:       "",
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Invalid JSON",
+			contentType:    "application/json",
+			body:           `{invalid json}`,
+			filePath:       "",
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name:           "Invalid URL format",
-			contentType:    "text/plain",
-			body:           `{"url": "https://example.com"}`,
-			filePath:       "testdata/urls.json",
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
-			name:           "Invalid request",
-			contentType:    "text/plain",
-			body:           `{"url": "https://example.com"}`,
-			filePath:       "testdata/urls.json",
+			contentType:    "application/json",
+			body:           `{"url": "example.com"}`,
+			filePath:       "",
 			expectedStatus: http.StatusBadRequest,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// ИСПОЛЬЗУЕМ КОНСТРУКТОР
+			shortener := NewURLShortener("http://localhost:8080", []byte("test-secret"))
 
-			// Сброс глобального состояния
-			urlMap = make(map[string]string)
-
-			// Создание запроса
 			req := httptest.NewRequest("POST", "/api/shorten", strings.NewReader(tt.body))
 			req.Header.Set("Content-Type", tt.contentType)
-
-			// Создание ответа
 			rr := httptest.NewRecorder()
 
-			// Вызов обработчика
-			handler := ShortenJSONHandler(tt.body, tt.filePath)
+			handler := shortener.ShortenJSONHandler(defManager, "http://localhost:8080", tt.filePath)
 			handler(rr, req)
 
-			// Проверка статуса
 			assert.Equal(t, tt.expectedStatus, rr.Code)
 		})
 	}
