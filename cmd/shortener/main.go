@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"embed"
 	"fmt"
 	"net/http"
 	"os"
@@ -18,7 +19,28 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// Глобальные переменные для версии сборки
+var (
+	buildVersion string = "N/A"
+	buildDate    string = "N/A"
+	buildCommit  string = "N/A"
+)
+
+//go:embed templates/*.html
+//go:embed static/*
+//go:embed configs/*.json
+var embeddedFiles embed.FS
+
 func main() {
+	// Вывод информации о сборке
+	fmt.Printf("Build version: %s\n", buildVersion)
+	fmt.Printf("Build date: %s\n", buildDate)
+	fmt.Printf("Build commit: %s\n", buildCommit)
+	fmt.Println()
+
+	// Пример использования встроенных файлов
+	printEmbeddedFiles()
+
 	// Запускаем pprof на отдельном порту
 	go func() {
 		fmt.Println("Starting pprof server on :6060")
@@ -151,4 +173,42 @@ func dumpMemoryStats() {
 
 func bToMb(b uint64) uint64 {
 	return b / 1024 / 1024
+}
+
+func printEmbeddedFiles() {
+	fmt.Println("📦 Embedded files:")
+
+	// Функция для рекурсивного обхода embedded файлов
+	var walkDir func(string, string)
+	walkDir = func(prefix string, dir string) {
+		entries, err := embeddedFiles.ReadDir(dir)
+		if err != nil {
+			return
+		}
+
+		for _, entry := range entries {
+			fullPath := dir + "/" + entry.Name()
+			if dir == "." {
+				fullPath = entry.Name()
+			}
+
+			displayPath := fullPath
+			if prefix != "" {
+				displayPath = prefix + "/" + entry.Name()
+				if prefix == "." {
+					displayPath = entry.Name()
+				}
+			}
+
+			if entry.IsDir() {
+				fmt.Printf("  📁 %s/\n", displayPath)
+				walkDir(displayPath, fullPath)
+			} else {
+				fmt.Printf("     📄 %s\n", displayPath)
+			}
+		}
+	}
+
+	// Начинаем обход с корня
+	walkDir("", ".")
 }
