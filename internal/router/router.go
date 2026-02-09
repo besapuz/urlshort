@@ -141,13 +141,17 @@ func (s *URLShortener) ShortenJSONHandler(defaultManager *audit.Manager, baseURL
 			}
 			shortID = savedShortID // Используем фактически сохраненный shortID
 		} else if filePath != "" {
-			s.MemoryStorage.urlMap[shortID] = url
-			s.MemoryStorage.URLMappings = append(s.MemoryStorage.URLMappings, URLMapping{
-				UUID:        newUUID,
-				ShortURL:    shortID,
-				OriginalURL: url,
-				UserID:      userID,
-			})
+			// ИСПОЛЬЗУЕМ ПУЛ ВМЕСТО СОЗДАНИЯ НОВОГО ОБЪЕКТА
+			mapping := GetURLMappingFromPool()
+			defer PutURLMappingToPool(mapping) // Возвращаем в пул при выходе
+
+			mapping.UUID = newUUID
+			mapping.ShortURL = shortID
+			mapping.OriginalURL = url
+			mapping.UserID = userID
+			mapping.DeletedFlag = false
+
+			s.MemoryStorage.URLMappings = append(s.MemoryStorage.URLMappings, mapping)
 			if err := s.MemoryStorage.SaveToFile(filePath); err != nil {
 				log.Printf("Error saving to file: %v", err)
 			}
@@ -226,13 +230,17 @@ func (s *URLShortener) ShortenHandler(defaultManager *audit.Manager, baseURL str
 			}
 			shortID = savedShortID // Используем фактически сохраненный shortID
 		} else if filePath != "" {
-			s.MemoryStorage.urlMap[shortID] = url
-			s.MemoryStorage.URLMappings = append(s.MemoryStorage.URLMappings, URLMapping{
-				UUID:        newUUID,
-				ShortURL:    shortID,
-				OriginalURL: url,
-				UserID:      userID,
-			})
+			// ИСПОЛЬЗУЕМ ПУЛ ВМЕСТО СОЗДАНИЯ НОВОГО ОБЪЕКТА
+			mapping := GetURLMappingFromPool()
+			defer PutURLMappingToPool(mapping) // Возвращаем в пул при выходе
+
+			mapping.UUID = newUUID
+			mapping.ShortURL = shortID
+			mapping.OriginalURL = url
+			mapping.UserID = userID
+			mapping.DeletedFlag = false
+
+			s.MemoryStorage.URLMappings = append(s.MemoryStorage.URLMappings, mapping)
 			if err := s.MemoryStorage.SaveToFile(filePath); err != nil {
 				log.Printf("Error saving to file: %v", err)
 			}

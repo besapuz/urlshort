@@ -8,14 +8,6 @@ import (
 	"sync"
 )
 
-type URLMapping struct {
-	UUID        string `json:"uuid"`
-	ShortURL    string `json:"short_url"`
-	OriginalURL string `json:"original_url"`
-	UserID      string `json:"user_id"`
-	DeletedFlag bool   `json:"is_deleted"`
-}
-
 type Storages struct {
 	urlMap      map[string]string
 	userURLsMap map[string][]string
