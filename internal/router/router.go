@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// generate:reset
 type URLShortener struct {
 	DBStorage       *db.DBStorage
 	UseDB           bool
