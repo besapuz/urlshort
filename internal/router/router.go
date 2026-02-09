@@ -152,6 +152,9 @@ func (s *URLShortener) ShortenJSONHandler(defaultManager *audit.Manager, baseURL
 			mapping.DeletedFlag = false
 
 			s.MemoryStorage.URLMappings = append(s.MemoryStorage.URLMappings, mapping)
+
+			s.MemoryStorage.urlMap[shortID] = url
+
 			if err := s.MemoryStorage.SaveToFile(filePath); err != nil {
 				log.Printf("Error saving to file: %v", err)
 			}
@@ -241,6 +244,9 @@ func (s *URLShortener) ShortenHandler(defaultManager *audit.Manager, baseURL str
 			mapping.DeletedFlag = false
 
 			s.MemoryStorage.URLMappings = append(s.MemoryStorage.URLMappings, mapping)
+
+			s.MemoryStorage.urlMap[shortID] = url
+
 			if err := s.MemoryStorage.SaveToFile(filePath); err != nil {
 				log.Printf("Error saving to file: %v", err)
 			}
