@@ -139,7 +139,6 @@ func main() {
 
 	// Запуск сервера с поддержкой HTTPS если включено
 	go func() {
-		var err error
 		if cfg.EnableHTTPS == "true" || cfg.EnableHTTPS == "1" || cfg.EnableHTTPS == "on" {
 			fmt.Printf("Starting HTTPS server on %s\n", cfg.Address)
 			// Используем самоподписанные сертификаты для разработки
@@ -160,12 +159,8 @@ func main() {
 			} else {
 				err = server.ListenAndServeTLS(certFile, keyFile)
 			}
-		} else {
-			fmt.Printf("Starting HTTP server on %s\n", cfg.Address)
-			err = server.ListenAndServe()
 		}
-
-		if err != nil && err != http.ErrServerClosed {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			panic(err)
 		}
 	}()
