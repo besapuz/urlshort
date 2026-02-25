@@ -16,7 +16,6 @@ import (
 	"github.com/besapuz/urlshort/internal/handler"
 	"github.com/besapuz/urlshort/internal/logger"
 	"github.com/besapuz/urlshort/internal/router"
-	"github.com/besapuz/urlshort/internal/tls"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -137,31 +136,33 @@ func main() {
 		Handler: logger.RequestLogger(r),
 	}
 
-	// Запуск сервера с поддержкой HTTPS если включено
+	// Запуск сервера
 	go func() {
+		// Проверяем, нужно ли включить HTTPS
 		if cfg.EnableHTTPS == "true" || cfg.EnableHTTPS == "1" || cfg.EnableHTTPS == "on" {
 			fmt.Printf("Starting HTTPS server on %s\n", cfg.Address)
+
 			// Используем самоподписанные сертификаты для разработки
-			// В продакшене нужно использовать настоящие сертификаты
 			certFile := "server.crt"
 			keyFile := "server.key"
 
 			// Проверяем существование файлов сертификатов
-			if _, err := os.Stat(certFile); os.IsNotExist(err) {
-				fmt.Printf("Warning: Certificate file %s not found, generating self-signed certificate\n", certFile)
-				if err := tls.GenerateSelfSignedCert(certFile, keyFile); err != nil {
-					fmt.Printf("Failed to generate self-signed certificate: %v\n", err)
-					fmt.Println("Falling back to HTTP mode")
-					err = server.ListenAndServe()
-				} else {
-					err = server.ListenAndServeTLS(certFile, keyFile)
+			if _, statErr := os.Stat(certFile); os.IsNotExist(statErr) {
+				fmt.Printf("Warning: Certificate file %s not found, please generate certificates manually\n", certFile)
+				fmt.Println("Falling back to HTTP mode")
+				if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					panic(err)
 				}
 			} else {
-				err = server.ListenAndServeTLS(certFile, keyFile)
+				if err := server.ListenAndServeTLS(certFile, keyFile); err != nil && err != http.ErrServerClosed {
+					panic(err)
+				}
 			}
-		}
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			panic(err)
+		} else {
+			fmt.Printf("Starting HTTP server on %s\n", cfg.Address)
+			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				panic(err)
+			}
 		}
 	}()
 
