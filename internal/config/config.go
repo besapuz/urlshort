@@ -39,6 +39,9 @@ type Config struct {
 
 	// AuditURL - URL для отправки аудит-событий.
 	AuditURL string
+
+	// EnsbleHTTPS - флаг для включения HTTPS.
+	EnableHTTPS string
 }
 
 // NewConfig создает новую конфигурацию, читая параметры из:
@@ -57,6 +60,7 @@ func NewConfig() *Config {
 	flag.StringVar(&cfg.DatabaseDSN, "d", "", "database connect")
 	flag.StringVar(&cfg.AuditFile, "audit-file", "", "audit file")
 	flag.StringVar(&cfg.AuditURL, "audit-url", "", "audit url")
+	flag.StringVar(&cfg.EnableHTTPS, "s", "", "anable https (true/false/1/0/on/off)")
 
 	flag.Parse()
 
@@ -81,6 +85,9 @@ func NewConfig() *Config {
 	}
 	if envAuditURL := os.Getenv("AUDIT_URL"); envAuditURL != "" {
 		cfg.AuditURL = envAuditURL
+	}
+	if envEnableHTTPS := os.Getenv("ENABLE_HTTPS"); envEnableHTTPS != "" {
+		cfg.EnableHTTPS = envEnableHTTPS
 	}
 	if envCookieSecret := os.Getenv("COOKIE_SECRET"); envCookieSecret != "" {
 		cfg.CookieSecret = []byte(envCookieSecret)

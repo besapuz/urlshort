@@ -16,6 +16,7 @@ import (
 	"github.com/besapuz/urlshort/internal/handler"
 	"github.com/besapuz/urlshort/internal/logger"
 	"github.com/besapuz/urlshort/internal/router"
+	"github.com/besapuz/urlshort/internal/tls"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -136,8 +137,35 @@ func main() {
 		Handler: logger.RequestLogger(r),
 	}
 
+	// Запуск сервера с поддержкой HTTPS если включено
 	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		var err error
+		if cfg.EnableHTTPS == "true" || cfg.EnableHTTPS == "1" || cfg.EnableHTTPS == "on" {
+			fmt.Printf("Starting HTTPS server on %s\n", cfg.Address)
+			// Используем самоподписанные сертификаты для разработки
+			// В продакшене нужно использовать настоящие сертификаты
+			certFile := "server.crt"
+			keyFile := "server.key"
+
+			// Проверяем существование файлов сертификатов
+			if _, err := os.Stat(certFile); os.IsNotExist(err) {
+				fmt.Printf("Warning: Certificate file %s not found, generating self-signed certificate\n", certFile)
+				if err := tls.GenerateSelfSignedCert(certFile, keyFile); err != nil {
+					fmt.Printf("Failed to generate self-signed certificate: %v\n", err)
+					fmt.Println("Falling back to HTTP mode")
+					err = server.ListenAndServe()
+				} else {
+					err = server.ListenAndServeTLS(certFile, keyFile)
+				}
+			} else {
+				err = server.ListenAndServeTLS(certFile, keyFile)
+			}
+		} else {
+			fmt.Printf("Starting HTTP server on %s\n", cfg.Address)
+			err = server.ListenAndServe()
+		}
+
+		if err != nil && err != http.ErrServerClosed {
 			panic(err)
 		}
 	}()
