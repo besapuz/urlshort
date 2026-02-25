@@ -136,9 +136,33 @@ func main() {
 		Handler: logger.RequestLogger(r),
 	}
 
+	// Запуск сервера
 	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			panic(err)
+		// Проверяем, нужно ли включить HTTPS
+		if cfg.EnableHTTPS == "true" || cfg.EnableHTTPS == "1" || cfg.EnableHTTPS == "on" {
+			fmt.Printf("Starting HTTPS server on %s\n", cfg.Address)
+
+			// Используем самоподписанные сертификаты для разработки
+			certFile := "server.crt"
+			keyFile := "server.key"
+
+			// Проверяем существование файлов сертификатов
+			if _, statErr := os.Stat(certFile); os.IsNotExist(statErr) {
+				fmt.Printf("Warning: Certificate file %s not found, please generate certificates manually\n", certFile)
+				fmt.Println("Falling back to HTTP mode")
+				if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					panic(err)
+				}
+			} else {
+				if err := server.ListenAndServeTLS(certFile, keyFile); err != nil && err != http.ErrServerClosed {
+					panic(err)
+				}
+			}
+		} else {
+			fmt.Printf("Starting HTTP server on %s\n", cfg.Address)
+			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				panic(err)
+			}
 		}
 	}()
 
