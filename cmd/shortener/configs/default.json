@@ -1,0 +1,10 @@
+{
+  "address": ":8080",
+  "base_url": "http://localhost:8080",
+  "file_storage_path": "/tmp/shortener.json",
+  "database_dsn": "",
+  "audit_file": "",
+  "audit_url": "",
+  "cookie_secret": "my-secret-key-for-cookies",
+  "log_level": "info"
+}

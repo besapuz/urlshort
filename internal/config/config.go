@@ -3,6 +3,7 @@
 package config
 
 import (
+	"encoding/json"
 	"flag"
 	"net"
 	"net/url"
@@ -116,4 +117,22 @@ func NewConfig() *Config {
 // GetCookieSecret возвращает секретный ключ для подписи куки.
 func (c *Config) GetCookieSecret() []byte {
 	return c.CookieSecret
+}
+
+// FromJSON создает конфигурацию из JSON данных
+func FromJSON(data []byte) (*Config, error) {
+	var cfg Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+// FromJSONFile создает конфигурацию из JSON файла
+func FromJSONFile(filePath string) (*Config, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	return FromJSON(data)
 }
