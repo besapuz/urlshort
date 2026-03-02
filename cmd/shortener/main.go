@@ -142,7 +142,7 @@ func main() {
 	// Запуск сервера в горутине с сохранением всей логики HTTPS
 	go func() {
 		// Проверяем, нужно ли включить HTTPS
-		if cfg.EnableHTTPS == "true" || cfg.EnableHTTPS == "1" || cfg.EnableHTTPS == "on" {
+		if cfg.EnableHTTPS {
 			fmt.Printf("Starting HTTPS server on %s\n", cfg.Address)
 
 			// Используем самоподписанные сертификаты для разработки
