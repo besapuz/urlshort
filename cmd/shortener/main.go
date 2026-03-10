@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -11,12 +12,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/besapuz/urlshort/github.com/besapuz/urlshort/api/proto"
 	"github.com/besapuz/urlshort/internal/audit"
 	"github.com/besapuz/urlshort/internal/config"
 	"github.com/besapuz/urlshort/internal/handler"
 	"github.com/besapuz/urlshort/internal/logger"
 	"github.com/besapuz/urlshort/internal/router"
+	servergrpc "github.com/besapuz/urlshort/internal/server_grpc"
 	"github.com/go-chi/chi/v5"
+	"google.golang.org/grpc"
 )
 
 // Глобальные переменные для версии сборки
@@ -165,6 +169,26 @@ func main() {
 			serverErrors <- server.ListenAndServe()
 		}
 	}()
+	// gRPC сервер
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(authInterceptor),
+	)
+
+	proto.RegisterShortenerServiceServer(grpcServer, servergrpc.NewShortenerServer(shortener, cfg.BaseURL))
+
+	// Канал для ошибок gRPC сервера
+	grpcServerErrors := make(chan error, 1)
+
+	// Запуск gRPC сервера
+	go func() {
+		lis, err := net.Listen("tcp", cfg.GRPCAddress)
+		if err != nil {
+			grpcServerErrors <- fmt.Errorf("failed to listen: %w", err)
+			return
+		}
+		fmt.Printf("🔓 Starting gRPC server on %s\n", cfg.GRPCAddress)
+		grpcServerErrors <- grpcServer.Serve(lis)
+	}()
 
 	// Канал для сигналов ОС - добавляем SIGQUIT
 	shutdown := make(chan os.Signal, 1)
@@ -199,6 +223,9 @@ func main() {
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			fmt.Printf("Server shutdown error: %v\n", err)
 		}
+		// Останавливаем gRPC сервер
+		fmt.Println("Shutting down gRPC server...")
+		grpcServer.GracefulStop()
 
 		// Закрываем соединение с БД если есть
 		if shortener.DBStorage != nil {
@@ -214,6 +241,22 @@ func main() {
 	// Даем время на завершение всех горутин
 	time.Sleep(1 * time.Second)
 	fmt.Println("👋 Application stopped")
+}
+
+// authInterceptor для gRPC
+func authInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	// Для методов, не требующих авторизации, можно пропускать
+	// Авторизация будет проверена в самих хендлерах через metadata
+
+	start := time.Now()
+
+	// Вызов хендлера
+	resp, err := handler(ctx, req)
+
+	duration := time.Since(start)
+	fmt.Printf("gRPC call: %s, duration: %v, error: %v\n", info.FullMethod, duration, err)
+
+	return resp, err
 }
 
 func dumpMemoryStats() {

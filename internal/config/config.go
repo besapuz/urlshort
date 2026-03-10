@@ -48,6 +48,9 @@ type Config struct {
 
 	// TrustedSubnet - доверенная подсеть в формате CIDR
 	TrustedSubnet string `json:"trusted_subnet"`
+
+	// GRPCAddress - адрес и порт для запуска gRPC сервера.
+	GRPCAddress string `json:"grpc_address"`
 }
 
 // NewConfig создает новую конфигурацию, читая параметры из:
@@ -71,6 +74,7 @@ func NewConfig() *Config {
 	flag.BoolVar(&cfg.EnableHTTPS, "s", cfg.EnableHTTPS, "enable HTTPS")
 	flag.StringVar(&cfg.ConfigFile, "c", "", "path to config file (JSON)")
 	flag.StringVar(&cfg.TrustedSubnet, "t", "", "trusted subnet (CIDR)")
+	flag.StringVar(&cfg.GRPCAddress, "g", cfg.GRPCAddress, "gRPC server address")
 
 	flag.Parse()
 
@@ -120,6 +124,9 @@ func (c *Config) loadFromEnv() {
 	}
 	if envTrustedSubnet := os.Getenv("TRUSTED_SUBNET"); envTrustedSubnet != "" {
 		c.TrustedSubnet = envTrustedSubnet
+	}
+	if env := os.Getenv("GRPC_ADDRESS"); env != "" {
+		c.GRPCAddress = env
 	}
 	if envCookieSecret := os.Getenv("COOKIE_SECRET"); envCookieSecret != "" {
 		c.CookieSecret = []byte(envCookieSecret)
