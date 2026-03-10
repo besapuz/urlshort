@@ -123,6 +123,9 @@ func main() {
 
 	r.Delete("/api/user/urls", shortener.DeleteURLsHandler())
 
+	// Внутренний эндпоинт статистики (доступен только из доверенной подсети)
+	r.Get("/api/internal/stats", handler.StatsHandler(shortener, cfg.TrustedSubnet))
+
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "Shortener service is running at %s", cfg.BaseURL)

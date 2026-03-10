@@ -45,6 +45,9 @@ type Config struct {
 
 	// ConfigFile - путь к файлу конфигурации JSON
 	ConfigFile string
+
+	// TrustedSubnet - доверенная подсеть в формате CIDR
+	TrustedSubnet string `json:"trusted_subnet"`
 }
 
 // NewConfig создает новую конфигурацию, читая параметры из:
@@ -67,6 +70,7 @@ func NewConfig() *Config {
 	flag.StringVar(&cfg.AuditURL, "audit-url", "", "audit url")
 	flag.BoolVar(&cfg.EnableHTTPS, "s", cfg.EnableHTTPS, "enable HTTPS")
 	flag.StringVar(&cfg.ConfigFile, "c", "", "path to config file (JSON)")
+	flag.StringVar(&cfg.TrustedSubnet, "t", "", "trusted subnet (CIDR)")
 
 	flag.Parse()
 
@@ -113,6 +117,9 @@ func (c *Config) loadFromEnv() {
 	if envEnableHTTPS := os.Getenv("ENABLE_HTTPS"); envEnableHTTPS != "" {
 		// Преобразуем строку в bool
 		c.EnableHTTPS = envEnableHTTPS == "true" || envEnableHTTPS == "1" || envEnableHTTPS == "on"
+	}
+	if envTrustedSubnet := os.Getenv("TRUSTED_SUBNET"); envTrustedSubnet != "" {
+		c.TrustedSubnet = envTrustedSubnet
 	}
 	if envCookieSecret := os.Getenv("COOKIE_SECRET"); envCookieSecret != "" {
 		c.CookieSecret = []byte(envCookieSecret)
@@ -209,6 +216,9 @@ func (c *Config) mergeFromFile(fileConfig *Config) {
 	if len(fileConfig.CookieSecret) > 0 {
 		c.CookieSecret = fileConfig.CookieSecret
 	}
+	if c.TrustedSubnet == "" && fileConfig.TrustedSubnet != "" {
+		c.TrustedSubnet = fileConfig.TrustedSubnet
+	}
 	// Для булевых значений просто используем значение из файла, если флаг не был явно установлен
 	if !c.EnableHTTPS && fileConfig.EnableHTTPS {
 		// Проверяем, был ли флаг -s установлен явно
@@ -222,6 +232,7 @@ func (c *Config) mergeFromFile(fileConfig *Config) {
 			c.EnableHTTPS = fileConfig.EnableHTTPS
 		}
 	}
+
 }
 
 // SaveToJSONFile сохраняет текущую конфигурацию в JSON файл
