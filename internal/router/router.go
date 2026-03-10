@@ -28,6 +28,12 @@ type URLShortener struct {
 	MemoryStorage   *Storages
 }
 
+// StatsResponse представляет ответ эндпоинта статистики
+type StatsResponse struct {
+	URLs  int `json:"urls"`  // количество сокращённых URL
+	Users int `json:"users"` // количество пользователей
+}
+
 var req struct {
 	URL string `json:"url"`
 }
@@ -714,4 +720,43 @@ func (s *URLShortener) processBatch(ctx context.Context, shortIDs []string, user
 	}
 
 	return nil
+}
+
+// GetStats возвращает статистику сервиса
+func (s *URLShortener) GetStats() StatsResponse {
+	stats := StatsResponse{}
+
+	if s.UseDB {
+		// Получаем статистику из БД
+		urlsCount, usersCount, err := s.DBStorage.GetStats()
+		if err != nil {
+			log.Printf("Error getting stats from database: %v", err)
+			return stats
+		}
+		stats.URLs = urlsCount
+		stats.Users = usersCount
+	} else {
+		// Получаем статистику из файлового/памятного хранилища
+		s.MemoryStorage.mutex.Lock()
+		defer s.MemoryStorage.mutex.Unlock()
+
+		// Количество URL
+		if s.FileStoragePath != "" {
+			stats.URLs = len(s.MemoryStorage.URLMappings)
+
+			// Уникальные пользователи из URLMappings
+			users := make(map[string]bool)
+			for _, mapping := range s.MemoryStorage.URLMappings {
+				if mapping.UserID != "" {
+					users[mapping.UserID] = true
+				}
+			}
+			stats.Users = len(users)
+		} else {
+			stats.URLs = len(s.MemoryStorage.urlMap)
+			stats.Users = len(s.MemoryStorage.userURLsMap)
+		}
+	}
+
+	return stats
 }

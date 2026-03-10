@@ -123,6 +123,9 @@ func main() {
 
 	r.Delete("/api/user/urls", shortener.DeleteURLsHandler())
 
+	// Внутренний эндпоинт статистики (доступен только из доверенной подсети)
+	r.Get("/api/internal/stats", handler.StatsHandler(shortener, cfg.TrustedSubnet))
+
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "Shortener service is running at %s", cfg.BaseURL)
@@ -136,22 +139,81 @@ func main() {
 		Handler: logger.RequestLogger(r),
 	}
 
+	// Канал для ошибок сервера
+	serverErrors := make(chan error, 1)
+
+	// Запуск сервера в горутине с сохранением всей логики HTTPS
 	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			panic(err)
+		// Проверяем, нужно ли включить HTTPS
+		if cfg.EnableHTTPS {
+			fmt.Printf("Starting HTTPS server on %s\n", cfg.Address)
+
+			// Используем самоподписанные сертификаты для разработки
+			certFile := "server.crt"
+			keyFile := "server.key"
+
+			// Проверяем существование файлов сертификатов
+			if _, statErr := os.Stat(certFile); os.IsNotExist(statErr) {
+				fmt.Printf("Warning: Certificate file %s not found, please generate certificates manually\n", certFile)
+				fmt.Println("Falling back to HTTP mode")
+				serverErrors <- server.ListenAndServe()
+			} else {
+				serverErrors <- server.ListenAndServeTLS(certFile, keyFile)
+			}
+		} else {
+			fmt.Printf("Starting HTTP server on %s\n", cfg.Address)
+			serverErrors <- server.ListenAndServe()
 		}
 	}()
 
-	<-ctx.Done()
-	fmt.Println("Shutting down server...")
+	// Канал для сигналов ОС - добавляем SIGQUIT
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
-	// Graceful shutdown
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer shutdownCancel()
+	// Ожидаем сигнал завершения или ошибку сервера
+	select {
+	case err := <-serverErrors:
+		if err != nil && err != http.ErrServerClosed {
+			panic(fmt.Sprintf("Server error: %v", err))
+		}
 
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		fmt.Printf("Server shutdown error: %v\n", err)
+	case sig := <-shutdown:
+		fmt.Printf("\nReceived signal %v, starting graceful shutdown...\n", sig)
+
+		// Создаем контекст с таймаутом для graceful shutdown
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer shutdownCancel()
+
+		// Сохраняем данные перед остановкой (для файлового хранилища)
+		if cfg.DatabaseDSN == "" && cfg.FileStoragePath != "" {
+			fmt.Println("Saving data to file before shutdown...")
+			if err := shortener.MemoryStorage.SaveToFile(cfg.FileStoragePath); err != nil {
+				fmt.Printf("Error saving data: %v\n", err)
+			} else {
+				fmt.Println("Data saved successfully")
+			}
+		}
+
+		// Останавливаем сервер
+		fmt.Println("Shutting down server...")
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			fmt.Printf("Server shutdown error: %v\n", err)
+		}
+
+		// Закрываем соединение с БД если есть
+		if shortener.DBStorage != nil {
+			fmt.Println("Closing database connection...")
+			if err := shortener.DBStorage.Close(); err != nil {
+				fmt.Printf("Error closing database: %v\n", err)
+			}
+		}
+
+		fmt.Println("Server stopped gracefully")
 	}
+
+	// Даем время на завершение всех горутин
+	time.Sleep(1 * time.Second)
+	fmt.Println("👋 Application stopped")
 }
 
 func dumpMemoryStats() {
