@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/besapuz/urlshort/github.com/besapuz/urlshort/api/proto"
+	proto "github.com/besapuz/urlshort/api"
 	"github.com/besapuz/urlshort/internal/audit"
 	"github.com/besapuz/urlshort/internal/config"
 	"github.com/besapuz/urlshort/internal/handler"

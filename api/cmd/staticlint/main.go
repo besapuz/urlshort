@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/besapuz/urlshort/cmd/staticlint/exitcheck"
+	"github.com/besapuz/urlshort/api/cmd/staticlint/exitcheck"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/multichecker"
 	"golang.org/x/tools/go/analysis/passes/asmdecl"

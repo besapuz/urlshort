@@ -5,7 +5,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/besapuz/urlshort/github.com/besapuz/urlshort/api/proto"
+	proto "github.com/besapuz/urlshort/api"
 	"github.com/besapuz/urlshort/internal/app"
 	"github.com/besapuz/urlshort/internal/config/db"
 	"github.com/besapuz/urlshort/internal/router"
@@ -184,11 +184,16 @@ func (s *ShortenerServer) ListUserURLs(ctx context.Context, _ *emptypb.Empty) (*
 			})
 		}
 	} else if s.shortener.FileStoragePath != "" {
-		// Получение из файлового хранилища
 		s.shortener.MemoryStorage.MutexLock()
-		defer s.shortener.MemoryStorage.MutexUnlock()
 
-		for _, mapping := range s.shortener.MemoryStorage.GetURLMappings() {
+		// Получаем копию маппингов (GetURLMappings сам берет блокировку, поэтому мы не можем его использовать)
+		mappings := make([]router.URLMapping, len(s.shortener.MemoryStorage.URLMappings))
+		copy(mappings, s.shortener.MemoryStorage.URLMappings)
+
+		s.shortener.MemoryStorage.MutexUnlock()
+
+		// Работаем с копией данных
+		for _, mapping := range mappings {
 			if mapping.UserID == userID && !mapping.DeletedFlag {
 				shortURL := s.baseURL
 				if !strings.HasSuffix(shortURL, "/") {
