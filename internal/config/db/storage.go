@@ -225,3 +225,27 @@ func (s *DBStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID st
 
 	return nil
 }
+
+// GetStats возвращает статистику: количество URL и количество пользователей
+func (s *DBStorage) GetStats() (int, int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var urlsCount, usersCount int
+
+	// Получаем количество URL (неудаленных)
+	err := s.DB.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM url_mappings WHERE deleted = false").Scan(&urlsCount)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get URLs count: %w", err)
+	}
+
+	// Получаем количество уникальных пользователей
+	err = s.DB.QueryRowContext(ctx,
+		"SELECT COUNT(DISTINCT user_id) FROM url_mappings WHERE user_id IS NOT NULL AND user_id != ''").Scan(&usersCount)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get users count: %w", err)
+	}
+
+	return urlsCount, usersCount, nil
+}
